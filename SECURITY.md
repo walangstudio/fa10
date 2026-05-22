@@ -11,9 +11,9 @@ public issue. We aim to acknowledge reports within a few days.
 `fa10` is a **local-filesystem CLI**. It reads an input file and writes an
 output file on the same machine. It is not a sandbox and makes no attempt to
 defend against an attacker who already controls the machine or the files it is
-pointed at. Its safety features exist to prevent **accidental footguns** — a
-mistyped path, an unintended overwrite, or a runaway size — not to contain
-hostile input.
+pointed at. Its safety features exist to prevent accidental footguns, such as a
+mistyped path, an unintended overwrite, or a runaway size. They are not meant to
+contain hostile input.
 
 What `fa10` deliberately does **not** do:
 

@@ -1,31 +1,26 @@
 # fa10
 
-> Grow a file into a larger, **fully-reversible** test file with recognizable padding.
+[![CI](https://github.com/walangstudio/fa10/actions/workflows/ci.yml/badge.svg)](https://github.com/walangstudio/fa10/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/fa10.svg)](https://crates.io/crates/fa10)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Rust 1.74+](https://img.shields.io/badge/rust-1.74%2B-orange.svg)](https://www.rust-lang.org)
 
-`fa10` takes an input file and produces a bigger `.fa10` file by appending a
-repeating, human-recognizable ASCII pattern plus a small metadata footer. The
-original can be restored **byte-for-byte**, verified with SHA-256.
+fa10 makes a file bigger and lets you get the original back exactly.
 
-It's useful for:
+It copies your file into a new `.fa10` file, pads it out to whatever size you
+ask for using a repeating text marker, and records enough metadata in a footer
+to undo the whole thing. The padding is plain ASCII (`FA10-PADDING-BLOCK-`
+over and over), so it shows up clearly in a hex dump and compresses to almost
+nothing, unlike random bytes.
 
-- generating large files for **storage benchmarks**,
-- exercising **backup tools** and **upload limits**,
-- and being a fun little CLI in the spirit of `cowsay` or `sl`.
+I wrote it because I kept needing large files to test backups, upload limits,
+and disk-space behaviour, and `dd if=/dev/urandom` left me with junk I couldn't
+turn back into the original. fa10 keeps the original recoverable and verifies it
+with SHA-256 on the way back.
 
-Unlike filling a file with random bytes, `fa10`'s padding is obvious in a hex
-dump (`FA10-PADDING-BLOCK-FA10-PADDING-BLOCK-…`), compresses trivially, and is
-trivially reversible.
-
-```text
+```
 $ fa10 grow --multiplier 5 report.csv
 grew report.csv -> report.csv.fa10 (1.20 MiB -> 6.00 MiB, 4.80 MiB padding)
-
-$ fa10 info report.csv.fa10
-original filename: report.csv
-original size:     1.20 MiB
-total size:        6.00 MiB
-multiplier:        5.00x
-original sha256:   79279faed3a1...
 
 $ fa10 restore report.csv.fa10
 restored report.csv.fa10 -> report.csv (1.20 MiB), SHA-256 verified
@@ -33,125 +28,118 @@ restored report.csv.fa10 -> report.csv (1.20 MiB), SHA-256 verified
 
 ## Install
 
-### From source (cargo)
+From source:
 
 ```sh
 cargo install --path .
-# or, once published:
+```
+
+Once it is on crates.io:
+
+```sh
 cargo install fa10
 ```
 
-### Homebrew
-
-```sh
-brew install walangstudio/tap/fa10   # tap publishing tracked separately
-```
-
-### GitHub Releases
-
-Prebuilt binaries for Linux, macOS, and Windows (x86_64 + arm64) are attached to
-each [release](https://github.com/walangstudio/fa10/releases). Binaries are
-shipped **unpacked** (no UPX). macOS builds are notarized and Windows builds are
-Authenticode-signed (see the release workflow).
+Prebuilt binaries for Linux, macOS, and Windows (x86_64 and arm64) are attached
+to each [release](https://github.com/walangstudio/fa10/releases). They ship
+unpacked. macOS builds are notarized and Windows builds are Authenticode-signed.
 
 ## Usage
 
-```text
-fa10 grow <file>...                 # grow by 2x (default)
-fa10 grow --multiplier 5 <file>     # grow to 5x the original size
-fa10 grow --size 100MB <file>       # grow to an absolute size (binary units)
-fa10 restore <file.fa10>...         # restore the original
-fa10 info <file.fa10>               # inspect metadata, no restore
+```
+fa10 grow <file>...                 grow by 2x (the default)
+fa10 grow --multiplier 5 <file>     grow to 5x the original size
+fa10 grow --size 100MB <file>       grow to a fixed size
+fa10 restore <file.fa10>...         get the original back
+fa10 info <file.fa10>               print metadata, change nothing
 ```
 
-### Themed aliases (sugar over `--multiplier`)
+There are themed aliases if you want them:
 
-```text
-fa10 cake   <file>        # 2x
-fa10 feast  <file>        # 5x
-fa10 buffet <file>        # 10x
-fa10 diet   <file.fa10>   # alias for restore
-fa10 fast   <file.fa10>   # alias for restore
+```
+fa10 cake   <file>        same as grow --multiplier 2
+fa10 feast  <file>        same as grow --multiplier 5
+fa10 buffet <file>        same as grow --multiplier 10
+fa10 diet   <file.fa10>   same as restore
+fa10 fast   <file.fa10>   same as restore
 ```
 
 ### Flags
 
-| Flag | Applies to | Meaning |
-|------|------------|---------|
-| `-m`, `--multiplier <N>` | grow | Output size as a multiple of the original (default `2`). |
-| `-s`, `--size <SIZE>` | grow | Absolute target size, e.g. `100MB`, `2GiB`. Conflicts with `--multiplier`. |
-| `-o`, `--output <PATH>` | grow / restore | Explicit output path (single file only). |
-| `--pattern <STR>` | grow | Custom padding pattern (default `FA10-PADDING-BLOCK-`). |
-| `--in-place` | grow | Replace the original (requires `--confirm`). |
-| `--confirm` | grow | Authorize in-place writes and outputs above the 10 GiB cap. |
-| `--verify` | grow | Re-read and SHA-256-verify the written file. |
-| `--no-verify` | restore | Skip SHA-256 verification of recovered content. |
-| `--force` | restore | Overwrite an existing output file. |
-| `--batch` | grow / restore | Allow operating on more than 100 input files. |
-| `-q`, `--quiet` | global | Suppress banner and progress bar. |
-| `-v`, `--verbose` | global | Print extra detail (hashes). |
+| Flag | Command | What it does |
+|------|---------|--------------|
+| `-m`, `--multiplier <N>` | grow | Output size as a multiple of the original. Default is 2. |
+| `-s`, `--size <SIZE>` | grow | Fixed target size, for example `100MB` or `2GiB`. Cannot be combined with `--multiplier`. |
+| `-o`, `--output <PATH>` | grow, restore | Where to write the result. Single file only. |
+| `--pattern <STR>` | grow | Padding text to repeat. Default is `FA10-PADDING-BLOCK-`. |
+| `--in-place` | grow | Replace the original. Requires `--confirm`. |
+| `--confirm` | grow | Allow in-place writes and output over the 10 GiB cap. |
+| `--verify` | grow | Re-read the result and check its SHA-256 before reporting success. |
+| `--no-verify` | restore | Skip the SHA-256 check on the recovered file. |
+| `--force` | restore | Overwrite the output file if it already exists. |
+| `--batch` | grow, restore | Allow more than 100 input files in one run. |
+| `-q`, `--quiet` | any | No banner, no progress bar. |
+| `-v`, `--verbose` | any | Print hashes as well. |
 
-### Size units
+### Sizes
 
-All units are **binary** (1024-based). `KB`/`MB`/`GB`/`TB` are treated the same
-as `KiB`/`MiB`/`GiB`/`TiB`. A bare number is bytes. Decimals are allowed
-(`1.5MB` → `1572864`).
+Sizes use 1024 as the base. `KB`, `MB`, `GB`, and `TB` mean the same thing as
+`KiB`, `MiB`, `GiB`, and `TiB`. A plain number is a byte count. Decimals work,
+so `1.5MB` is `1572864` bytes.
 
-## File format (`.fa10`)
+## File format
 
-```text
+```
 Offset            Size   Field
-------            ----   -----
-0                 5      Header magic        "FA10\x00"
-5                 N      Original content    (N = original_size bytes, verbatim)
-5 + N             P      Padding             repeating ASCII "FA10-PADDING-BLOCK-"
-                                              (or --pattern), truncated to fill P bytes
---- Footer (length F = 56 + L) -------------------------------------------------
-5+N+P             8      Footer magic        "FA10FOOT"
-+8                8      original_size        u64 LE
-+8                4      filename_len  (L)    u32 LE
-+4                L      original_filename    UTF-8
+0                 5      header magic        "FA10\x00"
+5                 N      original content    (N = original size, copied as-is)
+5 + N             P      padding             repeating "FA10-PADDING-BLOCK-" (or --pattern)
+5 + N + P         8      footer magic        "FA10FOOT"
++8                8      original_size        u64 little-endian
++8                4      filename length (L)  u32 little-endian
++4                L      original filename    UTF-8
 +L                32     SHA-256 of original content
-+32               4      CRC32 of footer bytes [footer_start .. this field)
---- Trailer (fixed 16 bytes, at very end) --------------------------------------
-EOF-16            8      End magic           "FA10END\x00"
-EOF-8             8      footer_length (F)    u64 LE
++32               4      CRC32 of the footer bytes up to here
+EOF - 16          8      end magic           "FA10END\x00"
+EOF - 8           8      footer length        u64 little-endian
 ```
 
-- **Padding** `P = total_size - 5 - N - F - 16`.
-- The fixed 16-byte trailer makes the variable-length footer **reverse-readable
-  in O(1)**: `restore` and `info` seek straight to the footer instead of
-  scanning a multi-gigabyte file.
-- **Restore** reads the footer, streams the content region `[5, 5+N)` to the
-  output, and verifies the SHA-256.
+The 16-byte trailer at the end holds the footer length, so restore and info can
+jump straight to the footer with two seeks instead of scanning the whole file.
+Restore reads the footer, copies the content region back out, and checks the
+SHA-256.
 
-The `.fa10` extension was chosen because it is unclaimed (`.fa` is taken by the
-FASTA bioinformatics format).
+The `.fa10` extension is used because nothing else claims it. `.fa` is taken by
+the FASTA format from bioinformatics.
 
 ## Safety
 
-`fa10` is a good citizen. It will, by default:
+fa10 tries not to surprise you:
 
-1. Write to a **sibling** file (`original.txt.fa10`) and never touch the original
-   unless `--in-place --confirm` is given.
-2. Refuse to operate on **protected system paths** (`/usr`, `/bin`, `/etc`,
-   `/System`, `~/Library`, `C:\Windows`, …).
-3. Refuse to write if it would leave **less than 2 GiB** free.
-4. Cap unconfirmed output at **10 GiB**; larger requires `--confirm`.
-5. Refuse batches of **more than 100 files** without `--batch`.
-6. Do **no** network, registry, autostart, or self-modification — it is a pure
-   local-filesystem tool.
+1. It writes to a sibling file (`name.ext.fa10`) and leaves the original alone
+   unless you pass both `--in-place` and `--confirm`.
+2. It refuses to touch system paths such as `/usr`, `/bin`, `/etc`, `/System`,
+   `~/Library`, and `C:\Windows`.
+3. It checks free space first and refuses if the write would leave under 2 GiB.
+4. Output above 10 GiB needs `--confirm`.
+5. More than 100 files in one run needs `--batch`.
+6. It does not use the network, write config or registry entries, set up
+   autostart, or modify itself.
 
-See [SECURITY.md](SECURITY.md) for details.
+See [SECURITY.md](SECURITY.md) for the details.
 
-## Development
+## Building and testing
 
 ```sh
-cargo test                       # unit + integration tests
+cargo build --release
+cargo test
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
 
+The test suite uses small files (a few kilobytes) so it runs in well under a
+second. There is nothing that writes a large file as part of the tests.
+
 ## License
 
-[MIT](LICENSE) © fa10 contributors.
+MIT. See [LICENSE](LICENSE).
