@@ -22,3 +22,13 @@ pub use info::{info, Fa10Info};
 pub use progress::{NoProgress, Progress};
 pub use restore::{restore, verify_file, RestoreOptions, RestoreOutcome};
 pub use size::parse_size;
+
+/// Lowercase hex encoding of a byte slice.
+pub fn to_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        let _ = write!(s, "{b:02x}");
+    }
+    s
+}

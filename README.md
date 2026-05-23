@@ -19,7 +19,7 @@ turn back into the original. fa10 keeps the original recoverable and verifies it
 with SHA-256 on the way back.
 
 ```
-$ fa10 grow --multiplier 5 report.csv
+$ fa10 --multiplier 5 report.csv
 grew report.csv -> report.csv.fa10 (1.20 MiB -> 6.00 MiB, 4.80 MiB padding)
 
 $ fa10 restore report.csv.fa10
@@ -46,13 +46,19 @@ unpacked. macOS builds are notarized and Windows builds are Authenticode-signed.
 
 ## Usage
 
+`grow` is the default, so a bare file argument just grows it:
+
 ```
-fa10 grow <file>...                 grow by 2x (the default)
-fa10 grow --multiplier 5 <file>     grow to 5x the original size
-fa10 grow --size 100MB <file>       grow to a fixed size
+fa10 <file>...                      grow by 2x (the default)
+fa10 --multiplier 5 <file>          grow to 5x the original size
+fa10 --size 100MB <file>            grow to a fixed size
 fa10 restore <file.fa10>...         get the original back
 fa10 info <file.fa10>               print metadata, change nothing
 ```
+
+`fa10 grow <file>` still works if you prefer to spell it out. The implicit
+`grow` only kicks in when the first argument is not a known subcommand, so a
+file literally named `restore` needs `fa10 grow restore`.
 
 There are themed aliases if you want them:
 
@@ -61,7 +67,7 @@ fa10 cake   <file>        same as grow --multiplier 2
 fa10 feast  <file>        same as grow --multiplier 5
 fa10 buffet <file>        same as grow --multiplier 10
 fa10 diet   <file.fa10>   same as restore
-fa10 fast   <file.fa10>   same as restore
+fa10 slim   <file.fa10>   same as restore
 ```
 
 ### Flags
@@ -139,6 +145,10 @@ cargo fmt --check
 
 The test suite uses small files (a few kilobytes) so it runs in well under a
 second. There is nothing that writes a large file as part of the tests.
+
+The progress bar is behind a default `progress` feature. Build with
+`cargo build --release --no-default-features` to drop the `indicatif`
+dependency for a smaller binary; operations still run, just without the bar.
 
 ## License
 

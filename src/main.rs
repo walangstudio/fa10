@@ -2,12 +2,11 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
 use clap::Parser;
-use indicatif::{ProgressBar, ProgressStyle};
 
 use fa10::grow::{GrowOptions, Target};
-use fa10::progress::{NoProgress, Progress};
+use fa10::progress::NoProgress;
 use fa10::restore::RestoreOptions;
-use fa10::{grow, info, restore, safety};
+use fa10::{grow, info, restore, safety, to_hex};
 
 mod cli;
 use cli::{Cli, Commands, GrowArgs, InfoArgs, RestoreArgs, ThemedArgs};
@@ -20,16 +19,18 @@ const BANNER: &str = concat!(
     "Local filesystem only: no network, no persistence, no self-modification.\n",
 );
 
-/// An `indicatif`-backed progress sink.
+/// An `indicatif`-backed progress sink (only when the `progress` feature is on).
+#[cfg(feature = "progress")]
 struct BarProgress {
-    bar: ProgressBar,
+    bar: indicatif::ProgressBar,
 }
 
+#[cfg(feature = "progress")]
 impl BarProgress {
     fn new(label: &str) -> Self {
-        let bar = ProgressBar::new(0);
+        let bar = indicatif::ProgressBar::new(0);
         bar.set_style(
-            ProgressStyle::with_template(
+            indicatif::ProgressStyle::with_template(
                 "{msg} [{bar:30}] {bytes}/{total_bytes} ({bytes_per_sec})",
             )
             .unwrap()
@@ -40,7 +41,8 @@ impl BarProgress {
     }
 }
 
-impl Progress for BarProgress {
+#[cfg(feature = "progress")]
+impl fa10::progress::Progress for BarProgress {
     fn set_total(&self, total: u64) {
         self.bar.set_length(total);
     }
@@ -53,11 +55,44 @@ impl Progress for BarProgress {
 }
 
 fn main() {
-    let cli = Cli::parse();
+    let cli = Cli::parse_from(inject_default_subcommand(std::env::args_os().collect()));
     if let Err(err) = run(&cli) {
         eprintln!("error: {err:#}");
         std::process::exit(1);
     }
+}
+
+/// Make `grow` the implicit default: `fa10 report.csv` behaves like
+/// `fa10 grow report.csv`. If the first non-global token is not a known
+/// subcommand (and not a help/version request), insert `grow` before it.
+/// Leading global flags (`-q`/`-v` and their combinations) are skipped so
+/// `fa10 -q report.csv` still resolves to grow.
+fn inject_default_subcommand(mut args: Vec<std::ffi::OsString>) -> Vec<std::ffi::OsString> {
+    let mut i = 1; // args[0] is the program name
+    while i < args.len() {
+        let tok = args[i].to_string_lossy();
+        // Skip global flags that may legitimately precede a subcommand.
+        let is_global_short_combo = tok.starts_with('-')
+            && !tok.starts_with("--")
+            && tok.len() > 1
+            && tok.chars().skip(1).all(|c| c == 'q' || c == 'v');
+        if is_global_short_combo || tok == "--quiet" || tok == "--verbose" {
+            i += 1;
+            continue;
+        }
+        // Let clap handle help/version directly.
+        if tok == "-h" || tok == "--help" || tok == "-V" || tok == "--version" {
+            break;
+        }
+        // A known subcommand: nothing to inject.
+        if cli::SUBCOMMANDS.contains(&tok.as_ref()) {
+            break;
+        }
+        // Otherwise this is the implicit grow path.
+        args.insert(i, std::ffi::OsString::from("grow"));
+        break;
+    }
+    args
 }
 
 fn run(cli: &Cli) -> Result<()> {
@@ -72,6 +107,31 @@ fn run(cli: &Cli) -> Result<()> {
         Commands::Restore(args) => run_restore(args, cli),
         Commands::Info(args) => run_info(args, cli),
     }
+}
+
+/// Run `f` with a progress bar (label shown) unless `quiet`. With the `progress`
+/// feature disabled the bar is compiled out and `f` always gets `NoProgress`.
+#[cfg(feature = "progress")]
+fn with_progress<T>(
+    quiet: bool,
+    label: &str,
+    f: impl FnOnce(&dyn fa10::progress::Progress) -> T,
+) -> T {
+    if quiet {
+        f(&NoProgress)
+    } else {
+        let bar = BarProgress::new(label);
+        f(&bar)
+    }
+}
+
+#[cfg(not(feature = "progress"))]
+fn with_progress<T>(
+    _quiet: bool,
+    _label: &str,
+    f: impl FnOnce(&dyn fa10::progress::Progress) -> T,
+) -> T {
+    f(&NoProgress)
 }
 
 fn target_from(multiplier: Option<f64>, size: &Option<String>) -> Result<Target> {
@@ -139,12 +199,9 @@ fn grow_files(
             opts.pattern = p.clone();
         }
 
-        let outcome = if cli.quiet {
-            grow::grow(&opts, &NoProgress)
-        } else {
-            let bar = BarProgress::new(&format!("growing {}", file.display()));
-            grow::grow(&opts, &bar)
-        }
+        let outcome = with_progress(cli.quiet, &format!("growing {}", file.display()), |p| {
+            grow::grow(&opts, p)
+        })
         .with_context(|| format!("failed to grow {}", file.display()))?;
 
         if !cli.quiet {
@@ -163,7 +220,7 @@ fn grow_files(
                 if verify { ", verified" } else { "" },
             );
             if cli.verbose {
-                println!("  sha256: {}", hex(&outcome.sha256));
+                println!("  sha256: {}", to_hex(&outcome.sha256));
             }
         }
     }
@@ -182,12 +239,9 @@ fn run_restore(args: &RestoreArgs, cli: &Cli) -> Result<()> {
         opts.verify = !args.no_verify;
         opts.force = args.force;
 
-        let outcome = if cli.quiet {
-            restore::restore(&opts, &NoProgress)
-        } else {
-            let bar = BarProgress::new(&format!("restoring {}", file.display()));
-            restore::restore(&opts, &bar)
-        }
+        let outcome = with_progress(cli.quiet, &format!("restoring {}", file.display()), |p| {
+            restore::restore(&opts, p)
+        })
         .with_context(|| format!("failed to restore {}", file.display()))?;
 
         if !cli.quiet {
@@ -247,12 +301,4 @@ fn human(bytes: u64) -> String {
     } else {
         format!("{value:.2} {}", UNITS[unit])
     }
-}
-
-fn hex(bytes: &[u8]) -> String {
-    let mut s = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        s.push_str(&format!("{b:02x}"));
-    }
-    s
 }

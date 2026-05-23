@@ -10,6 +10,7 @@ use clap::{Args, Parser, Subcommand};
     version,
     about = "Grow a file into a larger, fully-reversible test file with recognizable padding.",
     long_about = None,
+    arg_required_else_help = true,
 )]
 pub struct Cli {
     /// Suppress the banner and progress output.
@@ -24,13 +25,19 @@ pub struct Cli {
     pub command: Commands,
 }
 
+/// Subcommand names (and the auto-generated `help`) recognized by the parser.
+/// Used to decide when a bare `fa10 <file>` should imply `grow`.
+pub const SUBCOMMANDS: &[&str] = &[
+    "grow", "restore", "info", "cake", "feast", "buffet", "diet", "slim", "help",
+];
+
 #[derive(Debug, Subcommand)]
 pub enum Commands {
     /// Grow a file by appending recognizable, reversible padding (default 2x).
     Grow(GrowArgs),
 
     /// Restore the original file from a .fa10 file.
-    #[command(visible_aliases = ["diet", "fast"])]
+    #[command(visible_aliases = ["diet", "slim"])]
     Restore(RestoreArgs),
 
     /// Show metadata about a .fa10 file without restoring it.

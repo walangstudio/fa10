@@ -9,13 +9,15 @@ All notable changes to this project are recorded here. The format follows
 First release. The `fa10` binary reports this version (`fa10 --version`).
 
 ### Added
-- `grow` command that copies a file into a `.fa10` file and pads it to a target
-  size, set with `--multiplier` or `--size`.
+- `grow` is the default command, so `fa10 <file>` and `fa10 --multiplier 5 <file>`
+  work without naming `grow`. The explicit `fa10 grow <file>` still works.
 - `restore` command that recovers the original file and verifies it against the
   stored SHA-256.
 - `info` command that prints a `.fa10` file's metadata without changing it.
-- Themed aliases: `cake` (2x), `feast` (5x), `buffet` (10x), and `diet` / `fast`
+- Themed aliases: `cake` (2x), `feast` (5x), `buffet` (10x), and `diet` / `slim`
   for restore.
+- Optional `progress` feature (on by default) for the `indicatif` progress bar;
+  `--no-default-features` builds a smaller binary without it.
 - `.fa10` format with a 5-byte header, a recognizable repeating padding pattern,
   a footer holding the original size, filename, SHA-256, and a CRC32, and a
   fixed 16-byte trailer that makes the footer readable with two seeks.

@@ -22,7 +22,7 @@ pub struct Fa10Info {
 
 impl Fa10Info {
     pub fn sha256_hex(&self) -> String {
-        hex(&self.sha256)
+        crate::to_hex(&self.sha256)
     }
 }
 
@@ -57,12 +57,4 @@ pub fn info(path: &Path) -> Result<Fa10Info> {
         multiplier,
         sha256: footer.sha256,
     })
-}
-
-fn hex(bytes: &[u8]) -> String {
-    let mut s = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        s.push_str(&format!("{b:02x}"));
-    }
-    s
 }
