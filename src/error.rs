@@ -51,6 +51,24 @@ pub enum Fa10Error {
 
     #[error("filename in footer is not valid UTF-8")]
     BadFilename,
+
+    #[error("no input files or directories given")]
+    NoInputs,
+
+    #[error("--in-place only works on a single file (not a directory or multiple inputs)")]
+    InPlaceNotSingleFile,
+
+    #[error("two inputs map to the same archive path {0:?}; rename one or pack them separately")]
+    DuplicateEntry(String),
+
+    #[error("symlink loop detected while walking {0} (or directory nesting too deep)")]
+    SymlinkCycle(PathBuf),
+
+    #[error("refusing to extract unsafe archive path {0:?} (absolute, parent-escaping, or drive-qualified)")]
+    UnsafeEntryPath(String),
+
+    #[error("{0} is not an fa10 archive (bad header magic)")]
+    NotAnArchive(PathBuf),
 }
 
 pub type Result<T> = std::result::Result<T, Fa10Error>;

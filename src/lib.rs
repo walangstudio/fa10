@@ -1,11 +1,12 @@
-//! `fa10` — grow a file into a larger, fully-reversible test file with
-//! recognizable padding.
+//! `fa10` — pack files and directories into one larger, fully-reversible
+//! archive with recognizable padding (the opposite of zip).
 //!
 //! The library is UI-agnostic: operations report progress through the
 //! [`progress::Progress`] trait and return rich outcome structs. The CLI
 //! ([`fa10` binary](../fa10/index.html)) wraps these with `clap` and
 //! `indicatif`.
 
+pub mod archive;
 pub mod error;
 pub mod format;
 pub mod grow;
@@ -16,7 +17,7 @@ pub mod safety;
 pub mod size;
 
 pub use error::{Fa10Error, Result};
-pub use format::{Footer, DEFAULT_PATTERN};
+pub use format::{Entry, EntryKind, Manifest, DEFAULT_PATTERN};
 pub use grow::{grow, GrowOptions, GrowOutcome, Target};
 pub use info::{info, Fa10Info};
 pub use progress::{NoProgress, Progress};

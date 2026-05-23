@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use clap::Parser;
 
 use fa10::grow::{GrowOptions, Target};
 use fa10::progress::NoProgress;
 use fa10::restore::RestoreOptions;
-use fa10::{grow, info, restore, safety, to_hex};
+use fa10::{grow, info, restore, to_hex};
 
 mod cli;
 use cli::{Cli, Commands, GrowArgs, InfoArgs, RestoreArgs, ThemedArgs};
@@ -14,8 +14,8 @@ use cli::{Cli, Commands, GrowArgs, InfoArgs, RestoreArgs, ThemedArgs};
 const BANNER: &str = concat!(
     "fa10 v",
     env!("CARGO_PKG_VERSION"),
-    " - grow a file into a larger, fully-reversible test file.\n",
-    "It appends recognizable padding; `fa10 restore` recovers the exact original.\n",
+    " - pack files and directories into one larger, fully-reversible archive.\n",
+    "Recognizable padding instead of compression; `fa10 restore` rebuilds the tree.\n",
     "Local filesystem only: no network, no persistence, no self-modification.\n",
 );
 
@@ -145,111 +145,87 @@ fn target_from(multiplier: Option<f64>, size: &Option<String>) -> Result<Target>
 
 fn run_grow(args: &GrowArgs, cli: &Cli) -> Result<()> {
     let target = target_from(args.multiplier, &args.size)?;
-    grow_files(
-        &args.files,
-        target,
-        &args.output,
-        &args.pattern,
-        args.in_place,
-        args.confirm,
-        args.verify,
-        args.batch,
-        cli,
-    )
+    grow_archive(args.files.clone(), target, args, cli)
 }
 
 fn run_themed(args: &ThemedArgs, multiplier: f64, cli: &Cli) -> Result<()> {
-    grow_files(
-        &args.files,
-        Target::Multiplier(multiplier),
-        &args.output,
-        &args.pattern,
-        args.in_place,
-        args.confirm,
-        args.verify,
-        args.batch,
-        cli,
-    )
+    let mut opts = GrowOptions::new(args.files.clone(), Target::Multiplier(multiplier));
+    opts.output = args.output.clone();
+    opts.in_place = args.in_place;
+    opts.confirm = args.confirm;
+    opts.verify = args.verify;
+    opts.batch = args.batch;
+    if let Some(p) = &args.pattern {
+        opts.pattern = p.clone();
+    }
+    pack(&opts, cli)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn grow_files(
-    files: &[PathBuf],
-    target: Target,
-    output: &Option<PathBuf>,
-    pattern: &Option<String>,
-    in_place: bool,
-    confirm: bool,
-    verify: bool,
-    batch: bool,
-    cli: &Cli,
-) -> Result<()> {
-    safety::check_batch_limit(files.len(), batch)?;
-    if files.len() > 1 && output.is_some() {
-        bail!("--output can only be used with a single input file");
+fn grow_archive(files: Vec<PathBuf>, target: Target, args: &GrowArgs, cli: &Cli) -> Result<()> {
+    let mut opts = GrowOptions::new(files, target);
+    opts.output = args.output.clone();
+    opts.in_place = args.in_place;
+    opts.confirm = args.confirm;
+    opts.verify = args.verify;
+    opts.batch = args.batch;
+    if let Some(p) = &args.pattern {
+        opts.pattern = p.clone();
     }
+    pack(&opts, cli)
+}
 
-    for file in files {
-        let mut opts = GrowOptions::new(file.clone(), target.clone());
-        opts.output = output.clone();
-        opts.in_place = in_place;
-        opts.confirm = confirm;
-        opts.verify = verify;
-        if let Some(p) = pattern {
-            opts.pattern = p.clone();
-        }
+fn pack(opts: &GrowOptions, cli: &Cli) -> Result<()> {
+    let outcome = with_progress(cli.quiet, "packing", |p| grow::grow(opts, p))
+        .with_context(|| "failed to create archive".to_string())?;
 
-        let outcome = with_progress(cli.quiet, &format!("growing {}", file.display()), |p| {
-            grow::grow(&opts, p)
-        })
-        .with_context(|| format!("failed to grow {}", file.display()))?;
-
-        if !cli.quiet {
-            if outcome.clamped {
-                eprintln!(
-                    "note: requested size was below the minimum; grew to the smallest reversible size."
-                );
-            }
-            println!(
-                "grew {} -> {} ({} -> {}, {} padding){}",
-                file.display(),
-                outcome.output_path.display(),
-                human(outcome.original_size),
-                human(outcome.output_size),
-                human(outcome.padding_size),
-                if verify { ", verified" } else { "" },
+    if !cli.quiet {
+        if outcome.clamped {
+            eprintln!(
+                "note: requested size was below the minimum; grew to the smallest reversible size."
             );
-            if cli.verbose {
-                println!("  sha256: {}", to_hex(&outcome.sha256));
-            }
         }
+        let entries = if outcome.entry_count == 1 {
+            "1 entry".to_string()
+        } else {
+            format!("{} entries", outcome.entry_count)
+        };
+        println!(
+            "packed {} ({}) -> {} ({}, {} padding){}",
+            entries,
+            human(outcome.payload_size),
+            outcome.output_path.display(),
+            human(outcome.output_size),
+            human(outcome.padding_size),
+            if opts.verify { ", verified" } else { "" },
+        );
     }
     Ok(())
 }
 
 fn run_restore(args: &RestoreArgs, cli: &Cli) -> Result<()> {
-    safety::check_batch_limit(args.files.len(), args.batch)?;
-    if args.files.len() > 1 && args.output.is_some() {
-        bail!("--output can only be used with a single input file");
-    }
-
     for file in &args.files {
         let mut opts = RestoreOptions::new(file.clone());
         opts.output = args.output.clone();
         opts.verify = !args.no_verify;
         opts.force = args.force;
 
-        let outcome = with_progress(cli.quiet, &format!("restoring {}", file.display()), |p| {
+        let outcome = with_progress(cli.quiet, &format!("extracting {}", file.display()), |p| {
             restore::restore(&opts, p)
         })
-        .with_context(|| format!("failed to restore {}", file.display()))?;
+        .with_context(|| format!("failed to extract {}", file.display()))?;
 
         if !cli.quiet {
+            let entries = if outcome.entry_count == 1 {
+                "1 entry".to_string()
+            } else {
+                format!("{} entries", outcome.entry_count)
+            };
             println!(
-                "restored {} -> {} ({}){}",
+                "extracted {} from {} -> {} ({}){}",
+                entries,
                 file.display(),
-                outcome.output_path.display(),
-                human(outcome.original_size),
+                outcome.root.display(),
+                human(outcome.payload_size),
                 if outcome.verified {
                     ", SHA-256 verified"
                 } else {
@@ -261,28 +237,36 @@ fn run_restore(args: &RestoreArgs, cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-fn run_info(args: &InfoArgs, _cli: &Cli) -> Result<()> {
+fn run_info(args: &InfoArgs, cli: &Cli) -> Result<()> {
     let info = info::info(&args.file)?;
-    println!("file:              {}", info.path.display());
-    println!("original filename: {}", info.original_filename);
+    println!("archive:      {}", info.path.display());
     println!(
-        "original size:     {} ({} bytes)",
-        human(info.original_size),
-        info.original_size
-    );
-    println!(
-        "total size:        {} ({} bytes)",
+        "total size:   {} ({} bytes)",
         human(info.total_size),
         info.total_size
     );
     println!(
-        "padding size:      {} ({} bytes)",
+        "payload size: {} ({} bytes)",
+        human(info.payload_size),
+        info.payload_size
+    );
+    println!(
+        "padding size: {} ({} bytes)",
         human(info.padding_size),
         info.padding_size
     );
-    println!("footer size:       {} bytes", info.footer_size);
-    println!("multiplier:        {:.2}x", info.multiplier);
-    println!("original sha256:   {}", info.sha256_hex());
+    println!("manifest:     {} bytes", info.manifest_size);
+    println!("multiplier:   {:.2}x", info.multiplier);
+    println!("entries:      {}", info.entry_count);
+    for e in &info.entries {
+        match e.kind {
+            fa10::EntryKind::EmptyDir => println!("  {:>12}  {}/", "<dir>", e.path),
+            fa10::EntryKind::File if cli.verbose => {
+                println!("  {:>12}  {}  {}", e.size, e.path, to_hex(&e.sha256))
+            }
+            fa10::EntryKind::File => println!("  {:>12}  {}", e.size, e.path),
+        }
+    }
     Ok(())
 }
 

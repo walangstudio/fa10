@@ -8,12 +8,12 @@ public issue. We aim to acknowledge reports within a few days.
 
 ## Threat model and design intent
 
-`fa10` is a **local-filesystem CLI**. It reads an input file and writes an
-output file on the same machine. It is not a sandbox and makes no attempt to
-defend against an attacker who already controls the machine or the files it is
-pointed at. Its safety features exist to prevent accidental footguns, such as a
-mistyped path, an unintended overwrite, or a runaway size. They are not meant to
-contain hostile input.
+`fa10` is a **local-filesystem CLI**. It packs files and directories into a
+`.fa10` archive and extracts that archive back, on the same machine. It is not a
+sandbox and makes no attempt to defend against an attacker who already controls
+the machine or the files it is pointed at. Its safety features exist to prevent
+accidental footguns, such as a mistyped path, an unintended overwrite, or a
+runaway size. They are not meant to contain hostile input.
 
 What `fa10` deliberately does **not** do:
 
@@ -28,10 +28,10 @@ What `fa10` deliberately does **not** do:
 
 These guardrails are enforced before any bytes are written:
 
-1. **Original is never modified by default.** Output goes to a sibling file
-   (`original.ext.fa10`). The input is only overwritten when **both**
-   `--in-place` and `--confirm` are supplied, and even then the new file is
-   written to a temporary path and atomically renamed into place.
+1. **Inputs are never modified by default.** Output goes to a sibling file
+   (`name.fa10` / `dir.fa10`). An input is only overwritten when **both**
+   `--in-place` and `--confirm` are supplied (single file only), and even then
+   the new file is written to a temporary path and atomically renamed into place.
 
 2. **Protected-path blocklist.** `fa10` refuses to read from or write to known
    system locations, matched after canonicalizing the path (so symlinks and
@@ -46,22 +46,30 @@ These guardrails are enforced before any bytes are written:
 
 4. **Unconfirmed size cap.** Output larger than **10 GiB** requires `--confirm`.
 
-5. **Batch limit.** Operating on **more than 100 files** in one invocation
-   requires `--batch`.
+5. **Batch limit.** Packing **more than 100 files** in one archive requires
+   `--batch`.
 
-6. **Pure local FS.** As above: no network, registry, autostart, or
+6. **Extraction stays inside the target directory.** On `restore`, every
+   manifest path is rejected if it is absolute, drive-qualified, or contains a
+   `..` component (the Zip-Slip guard), so a crafted archive cannot write
+   outside the extraction directory. Existing files are not overwritten without
+   `--force`. Archives never contain symlinks (links are followed and stored as
+   regular files at pack time), so extraction only creates regular files and
+   directories.
+
+7. **Pure local FS.** As above: no network, registry, autostart, or
    self-modification.
 
-7. **Clear startup banner.** Unless `--quiet` is passed, `fa10` prints a short
+8. **Clear startup banner.** Unless `--quiet` is passed, `fa10` prints a short
    banner stating what it does and that it is local-filesystem-only.
 
 ## Integrity guarantees
 
-- The original content is hashed with **SHA-256**; the hash is stored in the
-  footer and re-checked on `restore` (and on `grow --verify`). A mismatch aborts
-  the restore and removes the partial output.
-- The footer carries a **CRC32** over its own bytes so truncation or corruption
-  of the metadata is detected before restoration is attempted.
+- Each entry's content is hashed with **SHA-256**; the hash is stored in the
+  manifest and re-checked on `restore` (and on `grow --verify`). A mismatch
+  aborts and removes the partial output.
+- The manifest carries a **CRC32** over its own bytes so truncation or
+  corruption of the metadata is detected before extraction is attempted.
 
 ## Limitations
 

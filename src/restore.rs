@@ -1,4 +1,5 @@
-//! The `restore` operation: recover the exact original from a `.fa10` file.
+//! The `restore` (extract) operation: recover the exact tree from a `.fa10`
+//! archive.
 
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
@@ -7,7 +8,7 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use crate::error::{Fa10Error, Result};
-use crate::format::{self, Footer, HEADER_MAGIC};
+use crate::format::{self, EntryKind, Manifest, HEADER_MAGIC};
 use crate::progress::Progress;
 use crate::safety;
 
@@ -17,10 +18,11 @@ const COPY_BUF: usize = 4 * 1024 * 1024;
 #[derive(Debug, Clone)]
 pub struct RestoreOptions {
     pub input: PathBuf,
+    /// Extraction root. `None` means the current directory.
     pub output: Option<PathBuf>,
-    /// Verify SHA-256 of the recovered content (default true).
+    /// Verify each entry's SHA-256 (default true).
     pub verify: bool,
-    /// Allow overwriting an existing output file.
+    /// Allow overwriting existing files.
     pub force: bool,
 }
 
@@ -38,26 +40,10 @@ impl RestoreOptions {
 /// Result of a successful restore.
 #[derive(Debug, Clone)]
 pub struct RestoreOutcome {
-    pub output_path: PathBuf,
-    pub original_size: u64,
+    pub root: PathBuf,
+    pub entry_count: usize,
+    pub payload_size: u64,
     pub verified: bool,
-}
-
-/// Choose where to write the recovered original.
-fn resolve_output(input: &Path, footer: &Footer, explicit: &Option<PathBuf>) -> PathBuf {
-    if let Some(p) = explicit {
-        return p.clone();
-    }
-    // Prefer the recorded original filename, placed alongside the input.
-    let parent = input.parent().unwrap_or_else(|| Path::new("."));
-    if !footer.original_filename.is_empty() {
-        return parent.join(&footer.original_filename);
-    }
-    // Fall back to stripping a trailing `.fa10`.
-    if input.extension().and_then(|e| e.to_str()) == Some("fa10") {
-        return input.with_extension("");
-    }
-    parent.join("restored.bin")
 }
 
 pub fn restore(opts: &RestoreOptions, progress: &dyn Progress) -> Result<RestoreOutcome> {
@@ -67,92 +53,104 @@ pub fn restore(opts: &RestoreOptions, progress: &dyn Progress) -> Result<Restore
     let file_len = file.metadata()?.len();
     let mut reader = BufReader::with_capacity(COPY_BUF, file);
 
-    // Validate header.
     format::check_header(&mut reader)?;
+    let manifest = Manifest::read_from(&mut reader, file_len)?;
 
-    // Reverse-read the footer.
-    let footer = Footer::read_from(&mut reader, file_len)?;
+    let root = opts.output.clone().unwrap_or_else(|| PathBuf::from("."));
+    safety::check_path_allowed(&root)?;
 
-    let output_path = resolve_output(&opts.input, &footer, &opts.output);
-    safety::check_path_allowed(&output_path)?;
-    if output_path.exists() && !opts.force {
-        return Err(Fa10Error::OutputExists(output_path));
-    }
-    safety::check_free_space(&output_path, footer.original_size)?;
+    progress.set_total(manifest.payload_size());
 
-    progress.set_total(footer.original_size);
-
-    // Stream the content region [5, 5 + original_size) to the output.
+    // Content is laid out in manifest order, right after the 8-byte header.
     reader.seek(SeekFrom::Start(HEADER_MAGIC.len() as u64))?;
-    let out_file = File::create(&output_path)?;
-    let mut writer = BufWriter::with_capacity(COPY_BUF, out_file);
-
-    let mut hasher = Sha256::new();
-    let mut remaining = footer.original_size;
     let mut buf = vec![0u8; COPY_BUF];
-    while remaining > 0 {
-        let want = remaining.min(buf.len() as u64) as usize;
-        let n = reader.read(&mut buf[..want])?;
-        if n == 0 {
-            return Err(Fa10Error::BadFormat(
-                "unexpected EOF while reading original content".into(),
-            ));
+
+    for entry in &manifest.entries {
+        let target = safety::safe_extract_path(&root, &entry.path)?;
+
+        if entry.kind == EntryKind::EmptyDir {
+            fs::create_dir_all(&target)?;
+            continue;
         }
-        if opts.verify {
-            hasher.update(&buf[..n]);
+
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)?;
         }
-        writer.write_all(&buf[..n])?;
-        remaining -= n as u64;
-        progress.add(n as u64);
+        if target.exists() && !opts.force {
+            return Err(Fa10Error::OutputExists(target));
+        }
+
+        let out_file = File::create(&target)?;
+        let mut writer = BufWriter::with_capacity(COPY_BUF, out_file);
+        let mut hasher = opts.verify.then(Sha256::new);
+        let mut remaining = entry.size;
+        while remaining > 0 {
+            let want = remaining.min(buf.len() as u64) as usize;
+            let n = reader.read(&mut buf[..want])?;
+            if n == 0 {
+                return Err(Fa10Error::BadFormat(format!(
+                    "unexpected EOF restoring {}",
+                    entry.path
+                )));
+            }
+            if let Some(h) = hasher.as_mut() {
+                h.update(&buf[..n]);
+            }
+            writer.write_all(&buf[..n])?;
+            remaining -= n as u64;
+            progress.add(n as u64);
+        }
+        writer.flush()?;
+
+        if let Some(h) = hasher {
+            let got: [u8; 32] = h.finalize().into();
+            if got != entry.sha256 {
+                let _ = fs::remove_file(&target);
+                return Err(Fa10Error::ContentHashMismatch);
+            }
+        }
     }
-    writer.flush()?;
     progress.finish();
 
-    let verified = if opts.verify {
-        let got: [u8; 32] = hasher.finalize().into();
-        if got != footer.sha256 {
-            // Remove the bad output so we don't leave a corrupt file behind.
-            let _ = fs::remove_file(&output_path);
-            return Err(Fa10Error::ContentHashMismatch);
-        }
-        true
-    } else {
-        false
-    };
-
     Ok(RestoreOutcome {
-        output_path,
-        original_size: footer.original_size,
-        verified,
+        root,
+        entry_count: manifest.entries.len(),
+        payload_size: manifest.payload_size(),
+        verified: opts.verify,
     })
 }
 
-/// Verify that a `.fa10` file's stored content matches its footer SHA-256,
-/// without writing any output. Used by `grow --verify`.
+/// Verify that every file entry's stored content matches its SHA-256, without
+/// writing any output. Used by `grow --verify`.
 pub fn verify_file(path: &Path) -> Result<()> {
     let file = File::open(path)?;
     let file_len = file.metadata()?.len();
     let mut reader = BufReader::with_capacity(COPY_BUF, file);
 
     format::check_header(&mut reader)?;
-    let footer = Footer::read_from(&mut reader, file_len)?;
+    let manifest = Manifest::read_from(&mut reader, file_len)?;
 
     reader.seek(SeekFrom::Start(HEADER_MAGIC.len() as u64))?;
-    let mut hasher = Sha256::new();
-    let mut remaining = footer.original_size;
     let mut buf = vec![0u8; COPY_BUF];
-    while remaining > 0 {
-        let want = remaining.min(buf.len() as u64) as usize;
-        let n = reader.read(&mut buf[..want])?;
-        if n == 0 {
-            return Err(Fa10Error::BadFormat("truncated content region".into()));
+    for entry in &manifest.entries {
+        if entry.kind != EntryKind::File {
+            continue;
         }
-        hasher.update(&buf[..n]);
-        remaining -= n as u64;
-    }
-    let got: [u8; 32] = hasher.finalize().into();
-    if got != footer.sha256 {
-        return Err(Fa10Error::ContentHashMismatch);
+        let mut hasher = Sha256::new();
+        let mut remaining = entry.size;
+        while remaining > 0 {
+            let want = remaining.min(buf.len() as u64) as usize;
+            let n = reader.read(&mut buf[..want])?;
+            if n == 0 {
+                return Err(Fa10Error::BadFormat("truncated content region".into()));
+            }
+            hasher.update(&buf[..n]);
+            remaining -= n as u64;
+        }
+        let got: [u8; 32] = hasher.finalize().into();
+        if got != entry.sha256 {
+            return Err(Fa10Error::ContentHashMismatch);
+        }
     }
     Ok(())
 }

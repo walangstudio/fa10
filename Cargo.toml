@@ -1,9 +1,9 @@
 [package]
 name = "fa10"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.74"
-description = "Grow a file into a larger, fully-reversible test file with recognizable padding."
+description = "Pack files and directories into one larger, fully-reversible .fa10 archive (the opposite of zip)."
 license = "MIT"
 repository = "https://github.com/walangstudio/fa10"
 homepage = "https://github.com/walangstudio/fa10"

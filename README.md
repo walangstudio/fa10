@@ -5,25 +5,26 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust 1.74+](https://img.shields.io/badge/rust-1.74%2B-orange.svg)](https://www.rust-lang.org)
 
-fa10 makes a file bigger and lets you get the original back exactly.
+fa10 is the opposite of zip: it packs files and directories into one **bigger**,
+fully-reversible `.fa10` archive, then extracts the tree back byte-for-byte.
 
-It copies your file into a new `.fa10` file, pads it out to whatever size you
-ask for using a repeating text marker, and records enough metadata in a footer
-to undo the whole thing. The padding is plain ASCII (`FA10-PADDING-BLOCK-`
-over and over), so it shows up clearly in a hex dump and compresses to almost
-nothing, unlike random bytes.
+It concatenates everything into a single archive, pads it out to whatever size
+you ask for using a repeating text marker, and records a manifest (each entry's
+path, size, and SHA-256) so the whole tree can be rebuilt. The padding is plain
+ASCII (`FA10-PADDING-BLOCK-` over and over), so it shows up clearly in a hex dump
+and compresses to almost nothing, unlike random bytes.
 
-I wrote it because I kept needing large files to test backups, upload limits,
-and disk-space behaviour, and `dd if=/dev/urandom` left me with junk I couldn't
-turn back into the original. fa10 keeps the original recoverable and verifies it
-with SHA-256 on the way back.
+I wrote it because I kept needing large files and trees to test backups, upload
+limits, and disk-space behaviour, and `dd if=/dev/urandom` left me with junk I
+couldn't turn back into the originals. fa10 keeps everything recoverable and
+verifies each entry with SHA-256 on the way back.
 
 ```
-$ fa10 --multiplier 5 report.csv
-grew report.csv -> report.csv.fa10 (1.20 MiB -> 6.00 MiB, 4.80 MiB padding)
+$ fa10 --multiplier 5 project/
+packed 42 entries (1.20 MiB) -> project.fa10 (6.00 MiB, 4.80 MiB padding)
 
-$ fa10 restore report.csv.fa10
-restored report.csv.fa10 -> report.csv (1.20 MiB), SHA-256 verified
+$ fa10 restore project.fa10
+extracted 42 entries from project.fa10 -> . (1.20 MiB), SHA-256 verified
 ```
 
 ## Install
@@ -47,46 +48,54 @@ x86_64 and arm64, Windows on x86_64. They ship unpacked as `.tar.gz` (Unix) or
 
 ## Usage
 
-`grow` is the default, so a bare file argument just grows it:
+`grow` is the default, so a bare path just packs it:
 
 ```
-fa10 <file>...                      grow by 2x (the default)
-fa10 --multiplier 5 <file>          grow to 5x the original size
-fa10 --size 100MB <file>            grow to a fixed size
-fa10 restore <file.fa10>...         get the original back
-fa10 info <file.fa10>               print metadata, change nothing
+fa10 <path>...                      pack by 2x total size (the default)
+fa10 --multiplier 5 <path>...       pack to 5x the total input size
+fa10 --size 100MB <path>...         pack to a fixed size
+fa10 mydir/                         pack a directory tree -> mydir.fa10
+fa10 a.txt b.txt -o out.fa10        pack several files into one archive
+fa10 restore <archive>...           extract the tree (into the current dir)
+fa10 info <archive>                 list entries and metadata, change nothing
 ```
 
-`fa10 grow <file>` still works if you prefer to spell it out. The implicit
+Output naming: one file `foo` becomes `foo.fa10`; one directory `bar` becomes
+`bar.fa10`; two or more loose files default to `archive.fa10` (or pass
+`--output`). Extraction recreates the stored tree under the current directory,
+or under `--output <dir>`, like `unzip`.
+
+`fa10 grow <path>` still works if you prefer to spell it out. The implicit
 `grow` only kicks in when the first argument is not a known subcommand, so a
 file literally named `restore` needs `fa10 grow restore`.
 
 There are themed aliases if you want them:
 
 ```
-fa10 cake   <file>        same as grow --multiplier 2
-fa10 feast  <file>        same as grow --multiplier 5
-fa10 buffet <file>        same as grow --multiplier 10
-fa10 diet   <file.fa10>   same as restore
-fa10 slim   <file.fa10>   same as restore
+fa10 cake   <path>...     same as grow --multiplier 2
+fa10 feast  <path>...     same as grow --multiplier 5
+fa10 buffet <path>...     same as grow --multiplier 10
+fa10 diet   <archive>     same as restore
+fa10 slim   <archive>     same as restore
 ```
 
 ### Flags
 
 | Flag | Command | What it does |
 |------|---------|--------------|
-| `-m`, `--multiplier <N>` | grow | Output size as a multiple of the original. Default is 2. |
+| `-m`, `--multiplier <N>` | grow | Output size as a multiple of the total input size. Default is 2. |
 | `-s`, `--size <SIZE>` | grow | Fixed target size, for example `100MB` or `2GiB`. Cannot be combined with `--multiplier`. |
-| `-o`, `--output <PATH>` | grow, restore | Where to write the result. Single file only. |
+| `-o`, `--output <PATH>` | grow | Archive path. Defaults to `<input>.fa10`, or `archive.fa10` for 2+ inputs. |
+| `-o`, `--output <DIR>` | restore | Directory to extract into. Defaults to the current directory. |
 | `--pattern <STR>` | grow | Padding text to repeat. Default is `FA10-PADDING-BLOCK-`. |
-| `--in-place` | grow | Replace the original. Requires `--confirm`. |
+| `--in-place` | grow | Replace a single input file with its archive. Requires `--confirm`. |
 | `--confirm` | grow | Allow in-place writes and output over the 10 GiB cap. |
-| `--verify` | grow | Re-read the result and check its SHA-256 before reporting success. |
-| `--no-verify` | restore | Skip the SHA-256 check on the recovered file. |
-| `--force` | restore | Overwrite the output file if it already exists. |
-| `--batch` | grow, restore | Allow more than 100 input files in one run. |
+| `--verify` | grow | Re-read the archive and check every entry's SHA-256 before reporting success. |
+| `--no-verify` | restore | Skip the SHA-256 check while extracting. |
+| `--force` | restore | Overwrite existing files when extracting. |
+| `--batch` | grow | Allow packing more than 100 files. |
 | `-q`, `--quiet` | any | No banner, no progress bar. |
-| `-v`, `--verbose` | any | Print hashes as well. |
+| `-v`, `--verbose` | any | With `info`, also print each entry's SHA-256. |
 
 ### Sizes
 
@@ -97,24 +106,27 @@ so `1.5MB` is `1572864` bytes.
 ## File format
 
 ```
-Offset            Size   Field
-0                 5      header magic        "FA10\x00"
-5                 N      original content    (N = original size, copied as-is)
-5 + N             P      padding             repeating "FA10-PADDING-BLOCK-" (or --pattern)
-5 + N + P         8      footer magic        "FA10FOOT"
-+8                8      original_size        u64 little-endian
-+8                4      filename length (L)  u32 little-endian
-+4                L      original filename    UTF-8
-+L                32     SHA-256 of original content
-+32               4      CRC32 of the footer bytes up to here
-EOF - 16          8      end magic           "FA10END\x00"
-EOF - 8           8      footer length        u64 little-endian
+Offset    Size   Field
+0         8      header magic       "FA10ARC\0"
+8         ..     entry contents     concatenated in manifest order
+..        P      padding            repeating "FA10-PADDING-BLOCK-" (or --pattern)
+..        M      manifest:
+                   magic            "FA10MANI"
+                   entry_count      u32 little-endian
+                   per entry:       kind u8 (0=file, 1=empty dir)
+                                    path length u32 LE, path (UTF-8, '/'-separated)
+                                    content size u64 LE
+                                    SHA-256 of content (32 bytes)
+                   crc32            u32 LE over the manifest bytes
+EOF - 16  8      end magic          "FA10AEND"
+EOF - 8   8      manifest length    u64 little-endian
 ```
 
-The 16-byte trailer at the end holds the footer length, so restore and info can
-jump straight to the footer with two seeks instead of scanning the whole file.
-Restore reads the footer, copies the content region back out, and checks the
-SHA-256.
+Entries are sorted by path, so the same input tree always produces a
+byte-identical archive. The 16-byte trailer holds the manifest length, so
+restore and info reach the manifest with two seeks instead of scanning. Restore
+reads the manifest, then streams the contiguous content region back out entry by
+entry, checking each SHA-256.
 
 The `.fa10` extension is used because nothing else claims it. `.fa` is taken by
 the FASTA format from bioinformatics.
@@ -123,14 +135,20 @@ the FASTA format from bioinformatics.
 
 fa10 tries not to surprise you:
 
-1. It writes to a sibling file (`name.ext.fa10`) and leaves the original alone
-   unless you pass both `--in-place` and `--confirm`.
+1. It writes to a sibling file (`name.fa10` / `dir.fa10`) and leaves the inputs
+   alone unless you pass both `--in-place` and `--confirm` (single file only).
 2. It refuses to touch system paths such as `/usr`, `/bin`, `/etc`, `/System`,
    `~/Library`, and `C:\Windows`.
 3. It checks free space first and refuses if the write would leave under 2 GiB.
-4. Output above 10 GiB needs `--confirm`.
-5. More than 100 files in one run needs `--batch`.
-6. It does not use the network, write config or registry entries, set up
+4. Output above 10 GiB needs `--confirm`; packing more than 100 files needs `--batch`.
+5. Extraction is guarded against Zip-Slip: entry paths that are absolute,
+   drive-qualified, or contain `..` are refused, so an archive can never write
+   outside the extraction directory. Existing files are not overwritten without
+   `--force`.
+6. Symlinks are followed at pack time (their target content is stored as a plain
+   file), with cycle detection; the archive never contains a symlink, so
+   extraction only ever creates regular files and directories.
+7. It does not use the network, write config or registry entries, set up
    autostart, or modify itself.
 
 See [SECURITY.md](SECURITY.md) for the details.
@@ -158,8 +176,8 @@ The toolchain is pinned in `rust-toolchain.toml`; CI uses the same version.
 Releases are built by `.github/workflows/release.yml`. Either push a tag:
 
 ```sh
-git tag -a v0.1.0 -m "Release v0.1.0"
-git push origin v0.1.0
+git tag -a v0.2.0 -m "Release v0.2.0"
+git push origin v0.2.0
 ```
 
 or run the `Release` workflow manually (Actions tab) with a tag input. The

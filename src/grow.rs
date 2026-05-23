@@ -1,4 +1,5 @@
-//! The `grow` operation: turn a file into a larger, reversible `.fa10` file.
+//! The `grow` (pack) operation: bundle files and directories into one larger,
+//! reversible `.fa10` archive.
 
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Write};
@@ -6,8 +7,9 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
+use crate::archive::{self, PendingEntry};
 use crate::error::{Fa10Error, Result};
-use crate::format::{Footer, DEFAULT_PATTERN, FOOTER_FIXED, HEADER_MAGIC, TRAILER_LEN};
+use crate::format::{Entry, EntryKind, Manifest, DEFAULT_PATTERN, HEADER_MAGIC, TRAILER_LEN};
 use crate::progress::Progress;
 use crate::{restore, safety};
 
@@ -25,25 +27,28 @@ pub enum Target {
 /// Options controlling a grow operation.
 #[derive(Debug, Clone)]
 pub struct GrowOptions {
-    pub input: PathBuf,
+    pub inputs: Vec<PathBuf>,
     pub output: Option<PathBuf>,
     pub target: Target,
     pub pattern: String,
     pub in_place: bool,
     pub confirm: bool,
     pub verify: bool,
+    /// Allow more than `MAX_UNCONFIRMED_BATCH` file entries.
+    pub batch: bool,
 }
 
 impl GrowOptions {
-    pub fn new(input: impl Into<PathBuf>, target: Target) -> Self {
+    pub fn new(inputs: impl Into<Vec<PathBuf>>, target: Target) -> Self {
         GrowOptions {
-            input: input.into(),
+            inputs: inputs.into(),
             output: None,
             target,
             pattern: DEFAULT_PATTERN.to_string(),
             in_place: false,
             confirm: false,
             verify: false,
+            batch: false,
         }
     }
 }
@@ -52,17 +57,12 @@ impl GrowOptions {
 #[derive(Debug, Clone)]
 pub struct GrowOutcome {
     pub output_path: PathBuf,
-    pub original_size: u64,
+    pub entry_count: usize,
+    pub payload_size: u64,
     pub output_size: u64,
     pub padding_size: u64,
-    pub sha256: [u8; 32],
     /// True if the requested target was below the minimum and was bumped up.
     pub clamped: bool,
-}
-
-/// Compute the byte overhead (header + footer + trailer) for a given filename.
-fn overhead_for(filename: &str) -> u64 {
-    HEADER_MAGIC.len() as u64 + FOOTER_FIXED + filename.len() as u64 + TRAILER_LEN
 }
 
 /// Default sibling output path: `<input>.fa10`.
@@ -72,45 +72,61 @@ fn default_output(input: &Path) -> PathBuf {
     PathBuf::from(name)
 }
 
+fn resolve_output(opts: &GrowOptions) -> PathBuf {
+    if let Some(o) = &opts.output {
+        return o.clone();
+    }
+    if opts.in_place {
+        return opts.inputs[0].clone();
+    }
+    match opts.inputs.len() {
+        1 => default_output(&opts.inputs[0]),
+        _ => PathBuf::from("archive.fa10"),
+    }
+}
+
 pub fn grow(opts: &GrowOptions, progress: &dyn Progress) -> Result<GrowOutcome> {
     if opts.pattern.is_empty() {
         return Err(Fa10Error::EmptyPattern);
     }
 
-    let meta = fs::metadata(&opts.input)?;
-    if !meta.is_file() {
-        return Err(Fa10Error::BadFormat(format!(
-            "{} is not a regular file",
-            opts.input.display()
-        )));
-    }
-    let original_size = meta.len();
-    let filename = opts
-        .input
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "file".to_string());
+    let entries = archive::collect_entries(&opts.inputs)?;
+    let file_count = entries.iter().filter(|e| e.kind == EntryKind::File).count();
+    safety::check_batch_limit(file_count, opts.batch)?;
 
-    let overhead = overhead_for(&filename);
-    let min_output = overhead + original_size;
+    // In-place only makes sense for a single regular file.
+    if opts.in_place {
+        let single_file =
+            opts.inputs.len() == 1 && entries.len() == 1 && entries[0].kind == EntryKind::File;
+        if !single_file {
+            return Err(Fa10Error::InPlaceNotSingleFile);
+        }
+        if !opts.confirm {
+            return Err(Fa10Error::InPlaceNeedsConfirm);
+        }
+    }
+
+    let payload_size: u64 = entries.iter().map(|e| e.size).sum();
+
+    // The manifest length is fully determined by the entry paths/count (the
+    // per-entry SHA-256 is a fixed 32 bytes), so we can size padding before we
+    // have hashed anything.
+    let manifest_len = manifest_skeleton(&entries).encoded_len();
+    let overhead = HEADER_MAGIC.len() as u64 + manifest_len + TRAILER_LEN;
+    let min_output = overhead + payload_size;
 
     let (mut output_size, mut clamped) = match opts.target {
         Target::Size(s) => (s, false),
-        Target::Multiplier(m) => {
-            let scaled = (original_size as f64 * m).round() as u64;
-            (scaled, false)
-        }
+        Target::Multiplier(m) => ((payload_size as f64 * m).round() as u64, false),
     };
     if output_size < min_output {
         match opts.target {
-            // Explicit byte target below the minimum is an error.
             Target::Size(_) => {
                 return Err(Fa10Error::TargetTooSmall {
                     requested: output_size,
                     minimum: min_output,
                 })
             }
-            // Multiplier on a tiny file: bump up to the minimum and flag it.
             Target::Multiplier(_) => {
                 output_size = min_output;
                 clamped = true;
@@ -119,20 +135,11 @@ pub fn grow(opts: &GrowOptions, progress: &dyn Progress) -> Result<GrowOutcome> 
     }
     let padding_size = output_size - min_output;
 
-    // Resolve output path.
-    let output_path = if opts.in_place {
-        if !opts.confirm {
-            return Err(Fa10Error::InPlaceNeedsConfirm);
-        }
-        opts.input.clone()
-    } else {
-        opts.output
-            .clone()
-            .unwrap_or_else(|| default_output(&opts.input))
-    };
+    let output_path = resolve_output(opts);
 
-    // Safety checks.
-    safety::check_path_allowed(&opts.input)?;
+    for input in &opts.inputs {
+        safety::check_path_allowed(input)?;
+    }
     safety::check_path_allowed(&output_path)?;
     safety::check_size_cap(output_size, opts.confirm)?;
     safety::check_free_space(&output_path, output_size)?;
@@ -141,7 +148,6 @@ pub fn grow(opts: &GrowOptions, progress: &dyn Progress) -> Result<GrowOutcome> 
         return Err(Fa10Error::OutputExists(output_path));
     }
 
-    // When growing in place, write to a temp sibling then atomically rename.
     let write_path: PathBuf = if opts.in_place {
         let mut tmp = output_path.as_os_str().to_owned();
         tmp.push(".fa10.tmp");
@@ -152,26 +158,19 @@ pub fn grow(opts: &GrowOptions, progress: &dyn Progress) -> Result<GrowOutcome> 
 
     progress.set_total(output_size);
 
-    // On any failure, remove the partial file we created so we never leave a
-    // truncated `.fa10` (or `.fa10.tmp`) behind. We only ever delete the file
-    // we are writing, never the user's original input.
-    let sha = match write_fa10(
-        &opts.input,
+    // On any failure, remove the partial file we created (never the originals).
+    if let Err(e) = write_archive(
+        &entries,
         &write_path,
-        original_size,
-        &filename,
         padding_size,
         opts.pattern.as_bytes(),
         progress,
     ) {
-        Ok(sha) => sha,
-        Err(e) => {
-            if write_path != opts.input {
-                let _ = fs::remove_file(&write_path);
-            }
-            return Err(e);
+        if !opts.inputs.iter().any(|p| p == &write_path) {
+            let _ = fs::remove_file(&write_path);
         }
-    };
+        return Err(e);
+    }
 
     if opts.in_place {
         if let Err(e) = fs::rename(&write_path, &output_path) {
@@ -183,8 +182,6 @@ pub fn grow(opts: &GrowOptions, progress: &dyn Progress) -> Result<GrowOutcome> 
 
     if opts.verify {
         if let Err(e) = restore::verify_file(&output_path) {
-            // A fresh sibling output can be removed; for an in-place grow the
-            // original has already been replaced, so leave the result in place.
             if !opts.in_place {
                 let _ = fs::remove_file(&output_path);
             }
@@ -194,39 +191,86 @@ pub fn grow(opts: &GrowOptions, progress: &dyn Progress) -> Result<GrowOutcome> 
 
     Ok(GrowOutcome {
         output_path,
-        original_size,
+        entry_count: entries.len(),
+        payload_size,
         output_size,
         padding_size,
-        sha256: sha,
         clamped,
     })
 }
 
-#[allow(clippy::too_many_arguments)]
-fn write_fa10(
-    input: &Path,
+/// A manifest with the right shape (paths/kinds/sizes) but zeroed hashes, used
+/// only to compute the encoded length up front.
+fn manifest_skeleton(entries: &[PendingEntry]) -> Manifest {
+    Manifest {
+        entries: entries
+            .iter()
+            .map(|e| Entry {
+                kind: e.kind,
+                path: e.stored_path.clone(),
+                size: e.size,
+                sha256: [0u8; 32],
+            })
+            .collect(),
+    }
+}
+
+fn write_archive(
+    entries: &[PendingEntry],
     write_path: &Path,
-    original_size: u64,
-    filename: &str,
     padding_size: u64,
     pattern: &[u8],
     progress: &dyn Progress,
-) -> Result<[u8; 32]> {
-    let in_file = File::open(input)?;
-    let mut reader = BufReader::with_capacity(READ_BUF, in_file);
+) -> Result<()> {
     let out_file = File::create(write_path)?;
     let mut writer = BufWriter::with_capacity(WRITE_BUF, out_file);
 
-    // Header.
     writer.write_all(HEADER_MAGIC)?;
     progress.add(HEADER_MAGIC.len() as u64);
 
-    // Stream original content while hashing.
-    let mut hasher = Sha256::new();
+    let mut manifest = Manifest {
+        entries: Vec::with_capacity(entries.len()),
+    };
     let mut buf = vec![0u8; READ_BUF];
+    for e in entries {
+        let sha = if e.kind == EntryKind::File {
+            stream_entry(&e.fs_path, e.size, &mut writer, &mut buf, progress)?
+        } else {
+            [0u8; 32]
+        };
+        manifest.entries.push(Entry {
+            kind: e.kind,
+            path: e.stored_path.clone(),
+            size: e.size,
+            sha256: sha,
+        });
+    }
+
+    write_padding(&mut writer, pattern, padding_size, progress)?;
+
+    let mut manifest_bytes = Vec::new();
+    manifest.write_to(&mut manifest_bytes)?;
+    writer.write_all(&manifest_bytes)?;
+    progress.add(manifest_bytes.len() as u64);
+
+    writer.flush()?;
+    Ok(())
+}
+
+/// Stream one file's content into `writer`, returning its SHA-256. Errors if the
+/// file changed size mid-read (TOCTOU).
+fn stream_entry<W: Write>(
+    path: &Path,
+    expected: u64,
+    writer: &mut W,
+    buf: &mut [u8],
+    progress: &dyn Progress,
+) -> Result<[u8; 32]> {
+    let mut reader = BufReader::with_capacity(READ_BUF, File::open(path)?);
+    let mut hasher = Sha256::new();
     let mut copied = 0u64;
     loop {
-        let n = reader.read(&mut buf)?;
+        let n = reader.read(buf)?;
         if n == 0 {
             break;
         }
@@ -235,29 +279,13 @@ fn write_fa10(
         copied += n as u64;
         progress.add(n as u64);
     }
-    if copied != original_size {
+    if copied != expected {
         return Err(Fa10Error::BadFormat(format!(
-            "input changed during read: expected {original_size} bytes, read {copied}"
+            "{} changed during read: expected {expected} bytes, read {copied}",
+            path.display()
         )));
     }
-    let sha: [u8; 32] = hasher.finalize().into();
-
-    // Padding: write a pattern-aligned block buffer repeatedly.
-    write_padding(&mut writer, pattern, padding_size, progress)?;
-
-    // Footer + trailer.
-    let footer = Footer {
-        original_size,
-        original_filename: filename.to_string(),
-        sha256: sha,
-    };
-    let mut footer_bytes = Vec::new();
-    footer.write_to(&mut footer_bytes)?;
-    writer.write_all(&footer_bytes)?;
-    progress.add(footer_bytes.len() as u64);
-
-    writer.flush()?;
-    Ok(sha)
+    Ok(hasher.finalize().into())
 }
 
 fn write_padding<W: Write>(
@@ -269,15 +297,11 @@ fn write_padding<W: Write>(
     if remaining == 0 {
         return Ok(());
     }
-    // Build a block that is a whole number of patterns, ~PADDING_BLOCK_TARGET.
     let reps = (PADDING_BLOCK_TARGET / pattern.len()).max(1);
     let mut block = Vec::with_capacity(reps * pattern.len());
     for _ in 0..reps {
         block.extend_from_slice(pattern);
     }
-    // Because block.len() is a multiple of pattern.len(), each full block ends
-    // on a pattern boundary, so writing the first `rem` bytes of `block` for the
-    // final partial chunk keeps the repeating pattern phase continuous.
     while remaining > 0 {
         let chunk = remaining.min(block.len() as u64) as usize;
         writer.write_all(&block[..chunk])?;

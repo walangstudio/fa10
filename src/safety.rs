@@ -131,6 +131,35 @@ pub fn check_size_cap(output_size: u64, confirmed: bool) -> Result<()> {
     Ok(())
 }
 
+/// Resolve a stored archive path against an extraction `root`, refusing any
+/// path that could escape it (absolute, parent-relative, or drive-qualified).
+/// This is the Zip-Slip guard.
+pub fn safe_extract_path(root: &Path, stored: &str) -> Result<PathBuf> {
+    let unsafe_path = || Fa10Error::UnsafeEntryPath(stored.to_string());
+    if stored.is_empty() || stored.starts_with('/') {
+        return Err(unsafe_path());
+    }
+    // `/`-separated by format contract; reject any back-slashes outright.
+    if stored.contains('\\') || stored.contains('\0') {
+        return Err(unsafe_path());
+    }
+    let mut path = root.to_path_buf();
+    for comp in stored.split('/') {
+        match comp {
+            "" | "." => continue,
+            ".." => return Err(unsafe_path()),
+            // A drive/scheme-qualified component like `C:` or a Windows root.
+            c if c.contains(':') => return Err(unsafe_path()),
+            c => path.push(c),
+        }
+    }
+    // Defense in depth: the lexical join must stay under the root.
+    if !path.starts_with(root) {
+        return Err(unsafe_path());
+    }
+    Ok(path)
+}
+
 /// Enforce the unconfirmed batch limit.
 pub fn check_batch_limit(count: usize, batch_ok: bool) -> Result<()> {
     if !batch_ok && count > MAX_UNCONFIRMED_BATCH {
@@ -172,5 +201,37 @@ mod tests {
         assert!(check_batch_limit(MAX_UNCONFIRMED_BATCH, false).is_ok());
         assert!(check_batch_limit(MAX_UNCONFIRMED_BATCH + 1, false).is_err());
         assert!(check_batch_limit(MAX_UNCONFIRMED_BATCH + 1, true).is_ok());
+    }
+
+    #[test]
+    fn safe_extract_path_allows_nested() {
+        let root = Path::new("/tmp/out");
+        assert_eq!(
+            safe_extract_path(root, "foo/bar/baz.txt").unwrap(),
+            root.join("foo").join("bar").join("baz.txt")
+        );
+        // Redundant `.` and leading slash collapse safely.
+        assert_eq!(
+            safe_extract_path(root, "foo/./baz.txt").unwrap(),
+            root.join("foo").join("baz.txt")
+        );
+    }
+
+    #[test]
+    fn safe_extract_path_rejects_escapes() {
+        let root = Path::new("/tmp/out");
+        for bad in [
+            "../evil",
+            "foo/../../evil",
+            "/etc/passwd",
+            "C:\\Windows\\system32",
+            "foo\\..\\bar",
+            "",
+        ] {
+            assert!(
+                safe_extract_path(root, bad).is_err(),
+                "should reject {bad:?}"
+            );
+        }
     }
 }

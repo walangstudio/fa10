@@ -17,30 +17,31 @@ fn version_matches_crate() {
 }
 
 #[test]
-fn grow_and_restore_through_the_binary() {
+fn pack_and_extract_single_file() {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("hello.txt");
     fs::write(&input, b"round trip through the CLI").unwrap();
 
     fa10()
-        .args(["grow", "--size", "2000"])
+        .args(["-q", "grow", "--size", "2000"])
         .arg(&input)
         .assert()
         .success();
 
     let grown = dir.path().join("hello.txt.fa10");
-    assert!(grown.exists());
     assert_eq!(fs::metadata(&grown).unwrap().len(), 2000);
 
-    let restored = dir.path().join("hello.out");
+    let out = tempfile::tempdir().unwrap();
     fa10()
-        .args(["restore", "--output"])
-        .arg(&restored)
+        .args(["-q", "restore", "--output"])
+        .arg(out.path())
         .arg(&grown)
         .assert()
         .success();
-
-    assert_eq!(fs::read(&restored).unwrap(), b"round trip through the CLI");
+    assert_eq!(
+        fs::read(out.path().join("hello.txt")).unwrap(),
+        b"round trip through the CLI"
+    );
 }
 
 #[test]
@@ -63,7 +64,7 @@ fn cake_alias_grows_to_double() {
     let input = dir.path().join("c.bin");
     fs::write(&input, vec![7u8; 500]).unwrap();
 
-    fa10().arg("cake").arg(&input).assert().success();
+    fa10().arg("-q").arg("cake").arg(&input).assert().success();
 
     let grown = dir.path().join("c.bin.fa10");
     assert_eq!(fs::metadata(&grown).unwrap().len(), 1000);
@@ -75,11 +76,12 @@ fn bare_file_defaults_to_grow() {
     let input = dir.path().join("d.bin");
     fs::write(&input, vec![3u8; 400]).unwrap();
 
-    // No subcommand: `fa10 <file>` should grow to 2x.
     fa10().arg("-q").arg(&input).assert().success();
 
-    let grown = dir.path().join("d.bin.fa10");
-    assert_eq!(fs::metadata(&grown).unwrap().len(), 800);
+    assert_eq!(
+        fs::metadata(dir.path().join("d.bin.fa10")).unwrap().len(),
+        800
+    );
 }
 
 #[test]
@@ -88,63 +90,42 @@ fn top_level_multiplier_implies_grow() {
     let input = dir.path().join("e.bin");
     fs::write(&input, vec![9u8; 400]).unwrap();
 
-    // `fa10 --multiplier 3 <file>` with no subcommand.
     fa10()
         .args(["-q", "--multiplier", "3"])
         .arg(&input)
         .assert()
         .success();
 
-    let grown = dir.path().join("e.bin.fa10");
-    assert_eq!(fs::metadata(&grown).unwrap().len(), 1200);
+    assert_eq!(
+        fs::metadata(dir.path().join("e.bin.fa10")).unwrap().len(),
+        1200
+    );
 }
 
 #[test]
-fn slim_alias_restores() {
-    let dir = tempfile::tempdir().unwrap();
-    let input = dir.path().join("f.txt");
-    fs::write(&input, b"slim restores the original").unwrap();
+fn slim_and_diet_aliases_extract() {
+    for alias in ["slim", "diet"] {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("f.txt");
+        fs::write(&input, b"alias extracts").unwrap();
+        fa10()
+            .args(["-q", "--size", "2000"])
+            .arg(&input)
+            .assert()
+            .success();
 
-    fa10()
-        .args(["-q", "grow", "--size", "2000"])
-        .arg(&input)
-        .assert()
-        .success();
-    let grown = dir.path().join("f.txt.fa10");
-
-    let restored = dir.path().join("f.out");
-    fa10()
-        .args(["-q", "slim", "--output"])
-        .arg(&restored)
-        .arg(&grown)
-        .assert()
-        .success();
-
-    assert_eq!(fs::read(&restored).unwrap(), b"slim restores the original");
-}
-
-#[test]
-fn diet_alias_restores() {
-    let dir = tempfile::tempdir().unwrap();
-    let input = dir.path().join("g.txt");
-    fs::write(&input, b"diet recovers it too").unwrap();
-
-    fa10()
-        .args(["-q", "--size", "2000"])
-        .arg(&input)
-        .assert()
-        .success();
-    let grown = dir.path().join("g.txt.fa10");
-
-    let restored = dir.path().join("g.out");
-    fa10()
-        .args(["-q", "diet", "--output"])
-        .arg(&restored)
-        .arg(&grown)
-        .assert()
-        .success();
-
-    assert_eq!(fs::read(&restored).unwrap(), b"diet recovers it too");
+        let out = tempfile::tempdir().unwrap();
+        fa10()
+            .args(["-q", alias, "--output"])
+            .arg(out.path())
+            .arg(dir.path().join("f.txt.fa10"))
+            .assert()
+            .success();
+        assert_eq!(
+            fs::read(out.path().join("f.txt")).unwrap(),
+            b"alias extracts"
+        );
+    }
 }
 
 #[test]
@@ -156,9 +137,8 @@ fn feast_and_buffet_aliases_scale() {
 
         fa10().arg("-q").arg(alias).arg(&input).assert().success();
 
-        let grown = dir.path().join("b.bin.fa10");
         assert_eq!(
-            fs::metadata(&grown).unwrap().len(),
+            fs::metadata(dir.path().join("b.bin.fa10")).unwrap().len(),
             1000 * factor,
             "alias {alias}"
         );
@@ -166,20 +146,57 @@ fn feast_and_buffet_aliases_scale() {
 }
 
 #[test]
-fn implicit_grow_with_size_hits_target() {
-    let dir = tempfile::tempdir().unwrap();
-    let input = dir.path().join("s.bin");
-    fs::write(&input, vec![2u8; 1000]).unwrap();
+fn directory_packs_and_extracts() {
+    let src = tempfile::tempdir().unwrap();
+    let root = src.path().join("proj");
+    fs::create_dir_all(root.join("sub")).unwrap();
+    fs::write(root.join("top.txt"), b"top").unwrap();
+    fs::write(root.join("sub/nested.txt"), b"nested").unwrap();
 
-    // No subcommand, absolute size.
+    fa10().arg("-q").arg(&root).assert().success();
+    let archive = src.path().join("proj.fa10");
+    assert!(archive.exists());
+
+    let out = tempfile::tempdir().unwrap();
     fa10()
-        .args(["-q", "--size", "5000"])
-        .arg(&input)
+        .args(["-q", "restore", "--output"])
+        .arg(out.path())
+        .arg(&archive)
         .assert()
         .success();
+    assert_eq!(fs::read(out.path().join("proj/top.txt")).unwrap(), b"top");
+    assert_eq!(
+        fs::read(out.path().join("proj/sub/nested.txt")).unwrap(),
+        b"nested"
+    );
+}
 
-    let grown = dir.path().join("s.bin.fa10");
-    assert_eq!(fs::metadata(&grown).unwrap().len(), 5000);
+#[test]
+fn multiple_loose_files_make_one_archive() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.txt");
+    let b = dir.path().join("b.txt");
+    fs::write(&a, b"aaa").unwrap();
+    fs::write(&b, b"bbb").unwrap();
+    let archive = dir.path().join("arc.fa10");
+
+    fa10()
+        .args(["-q", "--size", "4000", "--output"])
+        .arg(&archive)
+        .arg(&a)
+        .arg(&b)
+        .assert()
+        .success();
+    assert_eq!(fs::metadata(&archive).unwrap().len(), 4000);
+
+    fa10()
+        .args(["-q", "info"])
+        .arg(&archive)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("entries:      2"))
+        .stdout(predicate::str::contains("a.txt"))
+        .stdout(predicate::str::contains("b.txt"));
 }
 
 #[test]
@@ -188,8 +205,8 @@ fn implicit_grow_custom_pattern_round_trips() {
     let input = dir.path().join("p.txt");
     fs::write(&input, b"pattern round trip").unwrap();
 
-    // `--pattern` before the file: the implicit grow must still apply, and the
-    // value must not be mistaken for a subcommand.
+    // `--pattern` before the file: implicit grow applies and the value is not
+    // mistaken for a subcommand.
     fa10()
         .args(["-q", "--pattern", "ZZZ-", "--size", "4000"])
         .arg(&input)
@@ -198,14 +215,17 @@ fn implicit_grow_custom_pattern_round_trips() {
     let grown = dir.path().join("p.txt.fa10");
     assert_eq!(fs::metadata(&grown).unwrap().len(), 4000);
 
-    let restored = dir.path().join("p.out");
+    let out = tempfile::tempdir().unwrap();
     fa10()
         .args(["-q", "restore", "--output"])
-        .arg(&restored)
+        .arg(out.path())
         .arg(&grown)
         .assert()
         .success();
-    assert_eq!(fs::read(&restored).unwrap(), b"pattern round trip");
+    assert_eq!(
+        fs::read(out.path().join("p.txt")).unwrap(),
+        b"pattern round trip"
+    );
 }
 
 #[test]
@@ -214,7 +234,7 @@ fn file_named_like_a_subcommand_needs_explicit_grow() {
     let input = dir.path().join("cake");
     fs::write(&input, vec![4u8; 600]).unwrap();
 
-    // `fa10 grow cake` grows the file literally named "cake".
+    // `fa10 grow cake` packs the file literally named "cake".
     fa10().args(["-q", "grow"]).arg(&input).assert().success();
     assert_eq!(
         fs::metadata(dir.path().join("cake.fa10")).unwrap().len(),
@@ -223,35 +243,24 @@ fn file_named_like_a_subcommand_needs_explicit_grow() {
 }
 
 #[test]
-fn info_reports_multiplier_and_matches_verbose_sha() {
+fn info_lists_entries_and_multiplier() {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("h.bin");
     fs::write(&input, vec![5u8; 1000]).unwrap();
-
-    // Capture the SHA printed by a verbose grow.
-    let out = fa10()
-        .args(["-v", "--size", "2000"])
+    fa10()
+        .args(["-q", "--size", "2000"])
         .arg(&input)
         .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let stdout = String::from_utf8(out).unwrap();
-    let sha_line = stdout
-        .lines()
-        .find(|l| l.trim_start().starts_with("sha256:"))
-        .expect("verbose output should print sha256");
-    let grow_sha = sha_line.split_whitespace().last().unwrap().to_string();
+        .success();
 
-    let grown = dir.path().join("h.bin.fa10");
     fa10()
         .args(["-q", "info"])
-        .arg(&grown)
+        .arg(dir.path().join("h.bin.fa10"))
         .assert()
         .success()
-        .stdout(predicate::str::contains("multiplier:        2.00x"))
-        .stdout(predicate::str::contains(&grow_sha));
+        .stdout(predicate::str::contains("entries:      1"))
+        .stdout(predicate::str::contains("multiplier:   2.00x"))
+        .stdout(predicate::str::contains("h.bin"));
 }
 
 #[test]
@@ -285,8 +294,6 @@ fn failed_grow_leaves_no_partial_output() {
 
     fa10().arg("-q").arg(&input).assert().failure();
 
-    // The pre-existing file must be left exactly as it was, and no temp file
-    // should be created.
     assert_eq!(fs::read(&grown).unwrap(), b"preexisting");
     assert!(!dir.path().join("x.bin.fa10.fa10.tmp").exists());
 }
@@ -297,7 +304,6 @@ fn in_place_grow_leaves_no_temp_and_round_trips() {
     let input = dir.path().join("ip.txt");
     fs::write(&input, b"in place round trip").unwrap();
 
-    // In-place grow needs --confirm; on success the .tmp is renamed away.
     fa10()
         .args(["-q", "grow", "--in-place", "--confirm", "--size", "3000"])
         .arg(&input)
@@ -307,12 +313,15 @@ fn in_place_grow_leaves_no_temp_and_round_trips() {
     assert_eq!(fs::metadata(&input).unwrap().len(), 3000);
     assert!(!dir.path().join("ip.txt.fa10.tmp").exists());
 
-    let restored = dir.path().join("ip.out");
+    let out = tempfile::tempdir().unwrap();
     fa10()
         .args(["-q", "restore", "--output"])
-        .arg(&restored)
+        .arg(out.path())
         .arg(&input)
         .assert()
         .success();
-    assert_eq!(fs::read(&restored).unwrap(), b"in place round trip");
+    assert_eq!(
+        fs::read(out.path().join("ip.txt")).unwrap(),
+        b"in place round trip"
+    );
 }
