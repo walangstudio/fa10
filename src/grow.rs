@@ -152,7 +152,10 @@ pub fn grow(opts: &GrowOptions, progress: &dyn Progress) -> Result<GrowOutcome> 
 
     progress.set_total(output_size);
 
-    let sha = write_fa10(
+    // On any failure, remove the partial file we created so we never leave a
+    // truncated `.fa10` (or `.fa10.tmp`) behind. We only ever delete the file
+    // we are writing, never the user's original input.
+    let sha = match write_fa10(
         &opts.input,
         &write_path,
         original_size,
@@ -160,15 +163,33 @@ pub fn grow(opts: &GrowOptions, progress: &dyn Progress) -> Result<GrowOutcome> 
         padding_size,
         opts.pattern.as_bytes(),
         progress,
-    )?;
+    ) {
+        Ok(sha) => sha,
+        Err(e) => {
+            if write_path != opts.input {
+                let _ = fs::remove_file(&write_path);
+            }
+            return Err(e);
+        }
+    };
 
     if opts.in_place {
-        fs::rename(&write_path, &output_path)?;
+        if let Err(e) = fs::rename(&write_path, &output_path) {
+            let _ = fs::remove_file(&write_path);
+            return Err(e.into());
+        }
     }
     progress.finish();
 
     if opts.verify {
-        restore::verify_file(&output_path)?;
+        if let Err(e) = restore::verify_file(&output_path) {
+            // A fresh sibling output can be removed; for an in-place grow the
+            // original has already been replaced, so leave the result in place.
+            if !opts.in_place {
+                let _ = fs::remove_file(&output_path);
+            }
+            return Err(e);
+        }
     }
 
     Ok(GrowOutcome {

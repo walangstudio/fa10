@@ -302,3 +302,128 @@ fn human(bytes: u64) -> String {
         format!("{value:.2} {}", UNITS[unit])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::inject_default_subcommand;
+    use std::ffi::OsString;
+
+    /// Run the injector on a borrowed token list and return owned strings.
+    fn inject(parts: &[&str]) -> Vec<String> {
+        let args: Vec<OsString> = parts.iter().map(OsString::from).collect();
+        inject_default_subcommand(args)
+            .iter()
+            .map(|s| s.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn bare_file_gets_grow() {
+        assert_eq!(
+            inject(&["fa10", "report.csv"]),
+            ["fa10", "grow", "report.csv"]
+        );
+    }
+
+    #[test]
+    fn multiple_files_get_grow_once() {
+        assert_eq!(
+            inject(&["fa10", "a.bin", "b.bin"]),
+            ["fa10", "grow", "a.bin", "b.bin"]
+        );
+    }
+
+    #[test]
+    fn top_level_long_flag_implies_grow() {
+        assert_eq!(
+            inject(&["fa10", "--multiplier", "5", "f"]),
+            ["fa10", "grow", "--multiplier", "5", "f"]
+        );
+    }
+
+    #[test]
+    fn top_level_short_flag_implies_grow() {
+        assert_eq!(
+            inject(&["fa10", "-m", "5", "f"]),
+            ["fa10", "grow", "-m", "5", "f"]
+        );
+    }
+
+    #[test]
+    fn equals_form_flag_implies_grow() {
+        assert_eq!(
+            inject(&["fa10", "--size=100MB", "f"]),
+            ["fa10", "grow", "--size=100MB", "f"]
+        );
+    }
+
+    #[test]
+    fn explicit_grow_is_untouched() {
+        assert_eq!(inject(&["fa10", "grow", "f"]), ["fa10", "grow", "f"]);
+    }
+
+    #[test]
+    fn known_subcommands_and_aliases_untouched() {
+        for sub in [
+            "restore", "info", "cake", "feast", "buffet", "diet", "slim", "help",
+        ] {
+            assert_eq!(inject(&["fa10", sub, "x"]), ["fa10", sub, "x"], "sub={sub}");
+        }
+    }
+
+    #[test]
+    fn global_flags_are_skipped_then_grow_injected() {
+        assert_eq!(inject(&["fa10", "-q", "f"]), ["fa10", "-q", "grow", "f"]);
+        assert_eq!(
+            inject(&["fa10", "--quiet", "f"]),
+            ["fa10", "--quiet", "grow", "f"]
+        );
+        assert_eq!(
+            inject(&["fa10", "--verbose", "f"]),
+            ["fa10", "--verbose", "grow", "f"]
+        );
+        assert_eq!(inject(&["fa10", "-qv", "f"]), ["fa10", "-qv", "grow", "f"]);
+        assert_eq!(inject(&["fa10", "-vq", "f"]), ["fa10", "-vq", "grow", "f"]);
+    }
+
+    #[test]
+    fn global_flag_before_subcommand_is_untouched() {
+        assert_eq!(
+            inject(&["fa10", "-q", "cake", "f"]),
+            ["fa10", "-q", "cake", "f"]
+        );
+    }
+
+    #[test]
+    fn help_and_version_are_left_for_clap() {
+        for flag in ["-h", "--help", "-V", "--version"] {
+            assert_eq!(inject(&["fa10", flag]), ["fa10", flag], "flag={flag}");
+        }
+    }
+
+    #[test]
+    fn version_short_flag_is_not_a_verbose_combo() {
+        // -V (version) must not be mistaken for a -v (verbose) global combo.
+        assert_eq!(inject(&["fa10", "-V"]), ["fa10", "-V"]);
+    }
+
+    #[test]
+    fn flag_value_that_looks_like_a_subcommand_still_grows() {
+        // `restore` here is the value of --pattern, not a subcommand.
+        assert_eq!(
+            inject(&["fa10", "--pattern", "restore", "f"]),
+            ["fa10", "grow", "--pattern", "restore", "f"]
+        );
+    }
+
+    #[test]
+    fn no_arguments_is_untouched() {
+        assert_eq!(inject(&["fa10"]), ["fa10"]);
+    }
+
+    #[test]
+    fn only_global_flags_injects_nothing() {
+        // No positional/subcommand to act on; clap will show help.
+        assert_eq!(inject(&["fa10", "-q"]), ["fa10", "-q"]);
+    }
+}
