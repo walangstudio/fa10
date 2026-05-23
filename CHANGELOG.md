@@ -26,5 +26,7 @@ First release. The `fa10` binary reports this version (`fa10 --version`).
   batch limit.
 - Flags: `--output`, `--pattern`, `--in-place`, `--confirm`, `--verify`,
   `--no-verify`, `--force`, `--batch`, `--quiet`, and `--verbose`.
+- Prebuilt binaries (Linux/macOS x86_64 + arm64, Windows x86_64) with
+  `SHA256SUMS`, built and published by the release workflow on each `v*` tag.
 
 [0.1.0]: https://github.com/walangstudio/fa10/releases/tag/v0.1.0

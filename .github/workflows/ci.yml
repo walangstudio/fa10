@@ -15,17 +15,17 @@ jobs:
     name: fmt + clippy + audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.95.0
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: rustfmt
         run: cargo fmt --all --check
       - name: clippy (all features)
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
       - name: clippy (no default features)
-        run: cargo clippy --all-targets --no-default-features -- -D warnings
+        run: cargo clippy --all-targets --no-default-features --locked -- -D warnings
       - name: cargo audit
         uses: rustsec/audit-check@v2
         with:
@@ -54,85 +54,16 @@ jobs:
             os: windows-latest
             target: x86_64-pc-windows-msvc
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.95.0
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --locked --target ${{ matrix.target }}
       - name: Test
-        run: cargo test --target ${{ matrix.target }}
+        run: cargo test --locked --target ${{ matrix.target }}
       - name: Build + test (no default features)
         run: |
-          cargo build --release --no-default-features --target ${{ matrix.target }}
-          cargo test --no-default-features --target ${{ matrix.target }}
-
-  # ---------------------------------------------------------------------------
-  # Release job (DISABLED STUB).
-  #
-  # Enable by setting `if: startsWith(github.ref, 'refs/tags/v')` and providing
-  # the signing secrets below. Binaries are shipped UNPACKED (no UPX).
-  #
-  # Required repository secrets to fully enable signing/notarization:
-  #   WINDOWS_CERT_BASE64      - base64-encoded Authenticode .pfx
-  #   WINDOWS_CERT_PASSWORD    - password for the .pfx
-  #   APPLE_CERT_BASE64        - base64-encoded Developer ID Application .p12
-  #   APPLE_CERT_PASSWORD      - password for the .p12
-  #   APPLE_NOTARY_KEY_ID      - App Store Connect API key id
-  #   APPLE_NOTARY_ISSUER_ID   - App Store Connect issuer id
-  #   APPLE_NOTARY_KEY_BASE64  - base64-encoded App Store Connect .p8 key
-  # ---------------------------------------------------------------------------
-  release:
-    name: release (stub)
-    if: false
-    needs: [lint, test]
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-          - os: macos-14
-            target: aarch64-apple-darwin
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      - name: Build release binary (unpacked, no UPX)
-        run: cargo build --release --target ${{ matrix.target }}
-
-      # --- Windows Authenticode signing (stub) -----------------------------
-      - name: Sign Windows binary (Authenticode)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          # Decode $env:WINDOWS_CERT_BASE64 to a .pfx, then:
-          #   signtool sign /fd SHA256 /tr http://timestamp.digicert.com `
-          #     /td SHA256 /f cert.pfx /p $env:WINDOWS_CERT_PASSWORD `
-          #     target/${{ matrix.target }}/release/fa10.exe
-          Write-Host "Authenticode signing stub - provide WINDOWS_CERT_* secrets to enable."
-
-      # --- macOS notarization (stub) ---------------------------------------
-      - name: Sign + notarize macOS binary
-        if: runner.os == 'macOS'
-        run: |
-          # codesign --options runtime --timestamp \
-          #   --sign "Developer ID Application: ..." \
-          #   target/${{ matrix.target }}/release/fa10
-          # xcrun notarytool submit fa10.zip --key key.p8 \
-          #   --key-id "$APPLE_NOTARY_KEY_ID" --issuer "$APPLE_NOTARY_ISSUER_ID" --wait
-          # xcrun stapler staple fa10
-          echo "codesign + notarytool stub - provide APPLE_* secrets to enable."
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: fa10-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/fa10*
+          cargo build --release --no-default-features --locked --target ${{ matrix.target }}
+          cargo test --no-default-features --locked --target ${{ matrix.target }}

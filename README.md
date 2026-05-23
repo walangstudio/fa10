@@ -40,9 +40,10 @@ Once it is on crates.io:
 cargo install fa10
 ```
 
-Prebuilt binaries for Linux, macOS, and Windows (x86_64 and arm64) are attached
-to each [release](https://github.com/walangstudio/fa10/releases). They ship
-unpacked. macOS builds are notarized and Windows builds are Authenticode-signed.
+Prebuilt binaries are attached to each
+[release](https://github.com/walangstudio/fa10/releases): Linux and macOS on
+x86_64 and arm64, Windows on x86_64. They ship unpacked as `.tar.gz` (Unix) or
+`.zip` (Windows), with a `SHA256SUMS` file to verify against.
 
 ## Usage
 
@@ -149,6 +150,22 @@ second. There is nothing that writes a large file as part of the tests.
 The progress bar is behind a default `progress` feature. Build with
 `cargo build --release --no-default-features` to drop the `indicatif`
 dependency for a smaller binary; operations still run, just without the bar.
+
+The toolchain is pinned in `rust-toolchain.toml`; CI uses the same version.
+
+## Releases
+
+Releases are built by `.github/workflows/release.yml`. Either push a tag:
+
+```sh
+git tag -a v0.1.0 -m "Release v0.1.0"
+git push origin v0.1.0
+```
+
+or run the `Release` workflow manually (Actions tab) with a tag input. The
+workflow stamps the crate version from the tag, builds the five target
+binaries, generates `SHA256SUMS`, and publishes a GitHub Release with
+auto-generated notes.
 
 ## License
 
