@@ -1,0 +1,46 @@
+[package]
+name = "fa10"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.74"
+description = "Pack files and directories into one larger, fully-reversible .fa10 archive (the opposite of zip)."
+license = "MIT"
+repository = "https://github.com/walangstudio/fa10"
+homepage = "https://github.com/walangstudio/fa10"
+readme = "README.md"
+keywords = ["cli", "testing", "filesystem", "benchmark", "padding"]
+categories = ["command-line-utilities", "filesystem"]
+exclude = ["/.github", "/target"]
+
+[[bin]]
+name = "fa10"
+path = "src/main.rs"
+
+[lib]
+name = "fa10"
+path = "src/lib.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+sha2 = "0.10"
+crc32fast = "1.4"
+indicatif = { version = "0.17", optional = true }
+fs2 = "0.4"
+anyhow = "1.0"
+thiserror = "1.0"
+
+[features]
+default = ["progress"]
+progress = ["dep:indicatif"]
+
+[dev-dependencies]
+tempfile = "3.10"
+assert_cmd = "2.0"
+predicates = "3.1"
+
+[profile.release]
+strip = true
+lto = true
+panic = "abort"
+codegen-units = 1
+opt-level = "z"
