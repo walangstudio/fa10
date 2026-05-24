@@ -14,7 +14,7 @@ use cli::{Cli, Commands, GrowArgs, InfoArgs, RestoreArgs, ThemedArgs};
 const BANNER: &str = concat!(
     "fa10 v",
     env!("CARGO_PKG_VERSION"),
-    " - pack files and directories into one larger, fully-reversible archive.\n",
+    " - inflate files and directories into one larger, fully-reversible archive.\n",
     "Recognizable padding instead of compression; `fa10 restore` rebuilds the tree.\n",
     "Local filesystem only: no network, no persistence, no self-modification.\n",
 );
@@ -62,11 +62,11 @@ fn main() {
     }
 }
 
-/// Make `grow` the implicit default: `fa10 report.csv` behaves like
-/// `fa10 grow report.csv`. If the first non-global token is not a known
-/// subcommand (and not a help/version request), insert `grow` before it.
+/// Make `inflate` the implicit default: `fa10 report.csv` behaves like
+/// `fa10 inflate report.csv`. If the first non-global token is not a known
+/// subcommand (and not a help/version request), insert `inflate` before it.
 /// Leading global flags (`-q`/`-v` and their combinations) are skipped so
-/// `fa10 -q report.csv` still resolves to grow.
+/// `fa10 -q report.csv` still resolves to inflate.
 fn inject_default_subcommand(mut args: Vec<std::ffi::OsString>) -> Vec<std::ffi::OsString> {
     let mut i = 1; // args[0] is the program name
     while i < args.len() {
@@ -88,8 +88,8 @@ fn inject_default_subcommand(mut args: Vec<std::ffi::OsString>) -> Vec<std::ffi:
         if cli::SUBCOMMANDS.contains(&tok.as_ref()) {
             break;
         }
-        // Otherwise this is the implicit grow path.
-        args.insert(i, std::ffi::OsString::from("grow"));
+        // Otherwise this is the implicit inflate path.
+        args.insert(i, std::ffi::OsString::from("inflate"));
         break;
     }
     args
@@ -100,7 +100,7 @@ fn run(cli: &Cli) -> Result<()> {
         eprint!("{BANNER}");
     }
     match &cli.command {
-        Commands::Grow(args) => run_grow(args, cli),
+        Commands::Inflate(args) => run_grow(args, cli),
         Commands::Cake(args) => run_themed(args, 2.0, cli),
         Commands::Feast(args) => run_themed(args, 5.0, cli),
         Commands::Buffet(args) => run_themed(args, 10.0, cli),
@@ -302,72 +302,84 @@ mod tests {
     }
 
     #[test]
-    fn bare_file_gets_grow() {
+    fn bare_file_gets_inflate() {
         assert_eq!(
             inject(&["fa10", "report.csv"]),
-            ["fa10", "grow", "report.csv"]
+            ["fa10", "inflate", "report.csv"]
         );
     }
 
     #[test]
-    fn multiple_files_get_grow_once() {
+    fn multiple_files_get_inflate_once() {
         assert_eq!(
             inject(&["fa10", "a.bin", "b.bin"]),
-            ["fa10", "grow", "a.bin", "b.bin"]
+            ["fa10", "inflate", "a.bin", "b.bin"]
         );
     }
 
     #[test]
-    fn top_level_long_flag_implies_grow() {
+    fn top_level_long_flag_implies_inflate() {
         assert_eq!(
             inject(&["fa10", "--multiplier", "5", "f"]),
-            ["fa10", "grow", "--multiplier", "5", "f"]
+            ["fa10", "inflate", "--multiplier", "5", "f"]
         );
     }
 
     #[test]
-    fn top_level_short_flag_implies_grow() {
+    fn top_level_short_flag_implies_inflate() {
         assert_eq!(
             inject(&["fa10", "-m", "5", "f"]),
-            ["fa10", "grow", "-m", "5", "f"]
+            ["fa10", "inflate", "-m", "5", "f"]
         );
     }
 
     #[test]
-    fn equals_form_flag_implies_grow() {
+    fn equals_form_flag_implies_inflate() {
         assert_eq!(
             inject(&["fa10", "--size=100MB", "f"]),
-            ["fa10", "grow", "--size=100MB", "f"]
+            ["fa10", "inflate", "--size=100MB", "f"]
         );
     }
 
     #[test]
-    fn explicit_grow_is_untouched() {
+    fn explicit_inflate_is_untouched() {
+        assert_eq!(inject(&["fa10", "inflate", "f"]), ["fa10", "inflate", "f"]);
+    }
+
+    #[test]
+    fn grow_alias_is_recognized_and_untouched() {
+        // `grow` stays a hidden alias of inflate, so the injector leaves it alone.
         assert_eq!(inject(&["fa10", "grow", "f"]), ["fa10", "grow", "f"]);
     }
 
     #[test]
     fn known_subcommands_and_aliases_untouched() {
         for sub in [
-            "restore", "info", "cake", "feast", "buffet", "diet", "slim", "help",
+            "inflate", "grow", "restore", "info", "cake", "feast", "buffet", "diet", "slim", "help",
         ] {
             assert_eq!(inject(&["fa10", sub, "x"]), ["fa10", sub, "x"], "sub={sub}");
         }
     }
 
     #[test]
-    fn global_flags_are_skipped_then_grow_injected() {
-        assert_eq!(inject(&["fa10", "-q", "f"]), ["fa10", "-q", "grow", "f"]);
+    fn global_flags_are_skipped_then_inflate_injected() {
+        assert_eq!(inject(&["fa10", "-q", "f"]), ["fa10", "-q", "inflate", "f"]);
         assert_eq!(
             inject(&["fa10", "--quiet", "f"]),
-            ["fa10", "--quiet", "grow", "f"]
+            ["fa10", "--quiet", "inflate", "f"]
         );
         assert_eq!(
             inject(&["fa10", "--verbose", "f"]),
-            ["fa10", "--verbose", "grow", "f"]
+            ["fa10", "--verbose", "inflate", "f"]
         );
-        assert_eq!(inject(&["fa10", "-qv", "f"]), ["fa10", "-qv", "grow", "f"]);
-        assert_eq!(inject(&["fa10", "-vq", "f"]), ["fa10", "-vq", "grow", "f"]);
+        assert_eq!(
+            inject(&["fa10", "-qv", "f"]),
+            ["fa10", "-qv", "inflate", "f"]
+        );
+        assert_eq!(
+            inject(&["fa10", "-vq", "f"]),
+            ["fa10", "-vq", "inflate", "f"]
+        );
     }
 
     #[test]
@@ -392,11 +404,11 @@ mod tests {
     }
 
     #[test]
-    fn flag_value_that_looks_like_a_subcommand_still_grows() {
+    fn flag_value_that_looks_like_a_subcommand_still_inflates() {
         // `restore` here is the value of --pattern, not a subcommand.
         assert_eq!(
             inject(&["fa10", "--pattern", "restore", "f"]),
-            ["fa10", "grow", "--pattern", "restore", "f"]
+            ["fa10", "inflate", "--pattern", "restore", "f"]
         );
     }
 

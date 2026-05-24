@@ -4,19 +4,19 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - 2026-05-23
+## [0.2.0] - 2026-05-24
 
 First release. fa10 is the opposite of zip: it packs files and directories into
 one larger, fully-reversible `.fa10` archive and extracts the whole tree back
 byte-for-byte. The `fa10` binary reports this version (`fa10 --version`).
 
 ### Added
-- `grow` packs files and/or directories into one archive, padding to a target
+- `inflate` packs files and/or directories into one archive, padding to a target
   size set with `--multiplier` (a multiple of the total input size) or `--size`.
   Directories are walked recursively; symlinks are followed (their content is
   stored as a regular file) with cycle detection; empty directories are kept.
-  `grow` is the default command, so `fa10 <path>` and `fa10 --multiplier 5 <path>`
-  work without naming `grow`.
+  `inflate` is the default action, so `fa10 <path>` and `fa10 --multiplier 5 <path>`
+  work without naming it (`grow` remains a hidden alias).
 - `restore` extracts the stored tree under the current directory (or
   `--output <dir>`), like `unzip`, verifying each entry against its SHA-256 and
   refusing to overwrite without `--force`.
@@ -39,4 +39,4 @@ byte-for-byte. The `fa10` binary reports this version (`fa10 --version`).
 - Prebuilt binaries (Linux/macOS x86_64 + arm64, Windows x86_64) with
   `SHA256SUMS`, built and published by the release workflow on each `v*` tag.
 
-[0.1.0]: https://github.com/walangstudio/fa10/releases/tag/v0.1.0
+[0.2.0]: https://github.com/walangstudio/fa10/releases/tag/v0.2.0

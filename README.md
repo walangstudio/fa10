@@ -5,19 +5,23 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust 1.74+](https://img.shields.io/badge/rust-1.74%2B-orange.svg)](https://www.rust-lang.org)
 
-fa10 is the opposite of zip: it packs files and directories into one **bigger**,
-fully-reversible `.fa10` archive, then extracts the tree back byte-for-byte.
+fa10 makes files bigger. On purpose. Then it gives them back.
 
-It concatenates everything into a single archive, pads it out to whatever size
-you ask for using a repeating text marker, and records a manifest (each entry's
-path, size, and SHA-256) so the whole tree can be rebuilt. The padding is plain
-ASCII (`FA10-PADDING-BLOCK-` over and over), so it shows up clearly in a hex dump
-and compresses to almost nothing, unlike random bytes.
+Zip spent decades getting good at shrinking files. fa10 skipped that lecture.
+Point it at a file or a folder and it writes one larger `.fa10` archive padded
+with obvious filler text instead of compressed bits. Run `fa10 restore` and the
+original tree comes back byte for byte, checked against a SHA-256 so you know
+it's the real thing and not a convincing fake.
 
-I wrote it because I kept needing large files and trees to test backups, upload
-limits, and disk-space behaviour, and `dd if=/dev/urandom` left me with junk I
-couldn't turn back into the originals. fa10 keeps everything recoverable and
-verifies each entry with SHA-256 on the way back.
+Why would you want a bigger file? Because every so often you need a 6 GB file to
+test a backup, an upload limit, or a "disk almost full" alert, and
+`dd if=/dev/urandom` just hands you 6 GB of noise you can never turn back into
+anything. fa10's filler is plain ASCII (`FA10-PADDING-BLOCK-` over and over), so
+it stands out in a hex dump, compresses back down to almost nothing, and
+restores to exactly what you fed it.
+
+So yes, it's the opposite of zip. No, we are not entirely sure why either. The
+tests pass.
 
 ```
 $ fa10 --multiplier 5 project/
@@ -87,7 +91,7 @@ config, cache, or registry state, so removing the binary removes everything.
 
 ## Usage
 
-`grow` is the default, so a bare path just packs it:
+`inflate` is the default action, so a bare path just inflates it:
 
 ```
 fa10 <path>...                      pack by 2x total size (the default)
@@ -104,16 +108,17 @@ Output naming: one file `foo` becomes `foo.fa10`; one directory `bar` becomes
 `--output`). Extraction recreates the stored tree under the current directory,
 or under `--output <dir>`, like `unzip`.
 
-`fa10 grow <path>` still works if you prefer to spell it out. The implicit
-`grow` only kicks in when the first argument is not a known subcommand, so a
-file literally named `restore` needs `fa10 grow restore`.
+`fa10 inflate <path>` is the explicit form if you prefer to spell it out
+(`grow` works too, as a hidden alias). The implicit `inflate` only kicks in when
+the first argument is not a known subcommand, so a file literally named
+`restore` needs `fa10 inflate restore`.
 
 There are themed aliases if you want them:
 
 ```
-fa10 cake   <path>...     same as grow --multiplier 2
-fa10 feast  <path>...     same as grow --multiplier 5
-fa10 buffet <path>...     same as grow --multiplier 10
+fa10 cake   <path>...     same as --multiplier 2
+fa10 feast  <path>...     same as --multiplier 5
+fa10 buffet <path>...     same as --multiplier 10
 fa10 diet   <archive>     same as restore
 fa10 slim   <archive>     same as restore
 ```
@@ -122,17 +127,17 @@ fa10 slim   <archive>     same as restore
 
 | Flag | Command | What it does |
 |------|---------|--------------|
-| `-m`, `--multiplier <N>` | grow | Output size as a multiple of the total input size. Default is 2. |
-| `-s`, `--size <SIZE>` | grow | Fixed target size, for example `100MB` or `2GiB`. Cannot be combined with `--multiplier`. |
-| `-o`, `--output <PATH>` | grow | Archive path. Defaults to `<input>.fa10`, or `archive.fa10` for 2+ inputs. |
+| `-m`, `--multiplier <N>` | inflate | Output size as a multiple of the total input size. Default is 2. |
+| `-s`, `--size <SIZE>` | inflate | Fixed target size, for example `100MB` or `2GiB`. Cannot be combined with `--multiplier`. |
+| `-o`, `--output <PATH>` | inflate | Archive path. Defaults to `<input>.fa10`, or `archive.fa10` for 2+ inputs. |
 | `-o`, `--output <DIR>` | restore | Directory to extract into. Defaults to the current directory. |
-| `--pattern <STR>` | grow | Padding text to repeat. Default is `FA10-PADDING-BLOCK-`. |
-| `--in-place` | grow | Replace a single input file with its archive. Requires `--confirm`. |
-| `--confirm` | grow | Allow in-place writes and output over the 10 GiB cap. |
-| `--verify` | grow | Re-read the archive and check every entry's SHA-256 before reporting success. |
+| `--pattern <STR>` | inflate | Padding text to repeat. Default is `FA10-PADDING-BLOCK-`. |
+| `--in-place` | inflate | Replace a single input file with its archive. Requires `--confirm`. |
+| `--confirm` | inflate | Allow in-place writes and output over the 10 GiB cap. |
+| `--verify` | inflate | Re-read the archive and check every entry's SHA-256 before reporting success. |
 | `--no-verify` | restore | Skip the SHA-256 check while extracting. |
 | `--force` | restore | Overwrite existing files when extracting. |
-| `--batch` | grow | Allow packing more than 100 files. |
+| `--batch` | inflate | Allow packing more than 100 files. |
 | `-q`, `--quiet` | any | No banner, no progress bar. |
 | `-v`, `--verbose` | any | With `info`, also print each entry's SHA-256. |
 
@@ -215,8 +220,8 @@ The toolchain is pinned in `rust-toolchain.toml`; CI uses the same version.
 Releases are built by `.github/workflows/release.yml`. Either push a tag:
 
 ```sh
-git tag -a v0.1.0 -m "Release v0.1.0"
-git push origin v0.1.0
+git tag -a v0.2.0 -m "Release v0.2.0"
+git push origin v0.2.0
 ```
 
 or run the `Release` workflow manually (Actions tab) with a tag input. The
