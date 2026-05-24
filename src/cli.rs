@@ -8,7 +8,7 @@ use clap::{Args, Parser, Subcommand};
 #[command(
     name = "fa10",
     version,
-    about = "Pack files and directories into one larger, fully-reversible .fa10 archive (the opposite of zip).",
+    about = "Inflate files and directories into one larger, fully-reversible .fa10 archive (the opposite of zip).",
     long_about = None,
     arg_required_else_help = true,
 )]
@@ -25,16 +25,17 @@ pub struct Cli {
     pub command: Commands,
 }
 
-/// Subcommand names (and the auto-generated `help`) recognized by the parser.
-/// Used to decide when a bare `fa10 <file>` should imply `grow`.
+/// Subcommand names and aliases (plus the auto-generated `help`) recognized by
+/// the parser. Used to decide when a bare `fa10 <file>` should imply `inflate`.
 pub const SUBCOMMANDS: &[&str] = &[
-    "grow", "restore", "info", "cake", "feast", "buffet", "diet", "slim", "help",
+    "inflate", "grow", "restore", "info", "cake", "feast", "buffet", "diet", "slim", "help",
 ];
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
-    /// Pack files/directories into a reversible .fa10 archive (default 2x size).
-    Grow(GrowArgs),
+    /// Inflate files/directories into a reversible .fa10 archive (the default action, 2x).
+    #[command(alias = "grow")]
+    Inflate(GrowArgs),
 
     /// Extract a .fa10 archive, recreating its tree.
     #[command(visible_aliases = ["diet", "slim"])]
@@ -43,13 +44,13 @@ pub enum Commands {
     /// List a .fa10 archive's entries and metadata without extracting it.
     Info(InfoArgs),
 
-    /// Grow to 2x (themed alias for `grow --multiplier 2`).
+    /// Inflate to 2x (themed alias for `--multiplier 2`).
     Cake(ThemedArgs),
 
-    /// Grow to 5x (themed alias for `grow --multiplier 5`).
+    /// Inflate to 5x (themed alias for `--multiplier 5`).
     Feast(ThemedArgs),
 
-    /// Grow to 10x (themed alias for `grow --multiplier 10`).
+    /// Inflate to 10x (themed alias for `--multiplier 10`).
     Buffet(ThemedArgs),
 }
 

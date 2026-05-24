@@ -48,7 +48,7 @@ x86_64 and arm64, Windows on x86_64. They ship unpacked as `.tar.gz` (Unix) or
 
 ## Usage
 
-`grow` is the default, so a bare path just packs it:
+`inflate` is the default action, so a bare path just inflates it:
 
 ```
 fa10 <path>...                      pack by 2x total size (the default)
@@ -65,16 +65,17 @@ Output naming: one file `foo` becomes `foo.fa10`; one directory `bar` becomes
 `--output`). Extraction recreates the stored tree under the current directory,
 or under `--output <dir>`, like `unzip`.
 
-`fa10 grow <path>` still works if you prefer to spell it out. The implicit
-`grow` only kicks in when the first argument is not a known subcommand, so a
-file literally named `restore` needs `fa10 grow restore`.
+`fa10 inflate <path>` is the explicit form if you prefer to spell it out
+(`grow` works too, as a hidden alias). The implicit `inflate` only kicks in when
+the first argument is not a known subcommand, so a file literally named
+`restore` needs `fa10 inflate restore`.
 
 There are themed aliases if you want them:
 
 ```
-fa10 cake   <path>...     same as grow --multiplier 2
-fa10 feast  <path>...     same as grow --multiplier 5
-fa10 buffet <path>...     same as grow --multiplier 10
+fa10 cake   <path>...     same as --multiplier 2
+fa10 feast  <path>...     same as --multiplier 5
+fa10 buffet <path>...     same as --multiplier 10
 fa10 diet   <archive>     same as restore
 fa10 slim   <archive>     same as restore
 ```
@@ -83,17 +84,17 @@ fa10 slim   <archive>     same as restore
 
 | Flag | Command | What it does |
 |------|---------|--------------|
-| `-m`, `--multiplier <N>` | grow | Output size as a multiple of the total input size. Default is 2. |
-| `-s`, `--size <SIZE>` | grow | Fixed target size, for example `100MB` or `2GiB`. Cannot be combined with `--multiplier`. |
-| `-o`, `--output <PATH>` | grow | Archive path. Defaults to `<input>.fa10`, or `archive.fa10` for 2+ inputs. |
+| `-m`, `--multiplier <N>` | inflate | Output size as a multiple of the total input size. Default is 2. |
+| `-s`, `--size <SIZE>` | inflate | Fixed target size, for example `100MB` or `2GiB`. Cannot be combined with `--multiplier`. |
+| `-o`, `--output <PATH>` | inflate | Archive path. Defaults to `<input>.fa10`, or `archive.fa10` for 2+ inputs. |
 | `-o`, `--output <DIR>` | restore | Directory to extract into. Defaults to the current directory. |
-| `--pattern <STR>` | grow | Padding text to repeat. Default is `FA10-PADDING-BLOCK-`. |
-| `--in-place` | grow | Replace a single input file with its archive. Requires `--confirm`. |
-| `--confirm` | grow | Allow in-place writes and output over the 10 GiB cap. |
-| `--verify` | grow | Re-read the archive and check every entry's SHA-256 before reporting success. |
+| `--pattern <STR>` | inflate | Padding text to repeat. Default is `FA10-PADDING-BLOCK-`. |
+| `--in-place` | inflate | Replace a single input file with its archive. Requires `--confirm`. |
+| `--confirm` | inflate | Allow in-place writes and output over the 10 GiB cap. |
+| `--verify` | inflate | Re-read the archive and check every entry's SHA-256 before reporting success. |
 | `--no-verify` | restore | Skip the SHA-256 check while extracting. |
 | `--force` | restore | Overwrite existing files when extracting. |
-| `--batch` | grow | Allow packing more than 100 files. |
+| `--batch` | inflate | Allow packing more than 100 files. |
 | `-q`, `--quiet` | any | No banner, no progress bar. |
 | `-v`, `--verbose` | any | With `info`, also print each entry's SHA-256. |
 

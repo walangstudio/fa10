@@ -23,7 +23,7 @@ fn pack_and_extract_single_file() {
     fs::write(&input, b"round trip through the CLI").unwrap();
 
     fa10()
-        .args(["-q", "grow", "--size", "2000"])
+        .args(["-q", "inflate", "--size", "2000"])
         .arg(&input)
         .assert()
         .success();
@@ -51,7 +51,7 @@ fn quiet_suppresses_the_banner() {
     fs::write(&input, b"quiet please").unwrap();
 
     fa10()
-        .args(["--quiet", "grow", "--size", "2000"])
+        .args(["--quiet", "inflate", "--size", "2000"])
         .arg(&input)
         .assert()
         .success()
@@ -229,16 +229,37 @@ fn implicit_grow_custom_pattern_round_trips() {
 }
 
 #[test]
-fn file_named_like_a_subcommand_needs_explicit_grow() {
+fn file_named_like_a_subcommand_needs_explicit_inflate() {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("cake");
     fs::write(&input, vec![4u8; 600]).unwrap();
 
-    // `fa10 grow cake` packs the file literally named "cake".
-    fa10().args(["-q", "grow"]).arg(&input).assert().success();
+    // `fa10 inflate cake` packs the file literally named "cake".
+    fa10()
+        .args(["-q", "inflate"])
+        .arg(&input)
+        .assert()
+        .success();
     assert_eq!(
         fs::metadata(dir.path().join("cake.fa10")).unwrap().len(),
         1200
+    );
+}
+
+#[test]
+fn grow_is_a_working_alias_of_inflate() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("g.bin");
+    fs::write(&input, vec![8u8; 500]).unwrap();
+
+    fa10()
+        .args(["-q", "grow", "--size", "2000"])
+        .arg(&input)
+        .assert()
+        .success();
+    assert_eq!(
+        fs::metadata(dir.path().join("g.bin.fa10")).unwrap().len(),
+        2000
     );
 }
 
@@ -305,7 +326,7 @@ fn in_place_grow_leaves_no_temp_and_round_trips() {
     fs::write(&input, b"in place round trip").unwrap();
 
     fa10()
-        .args(["-q", "grow", "--in-place", "--confirm", "--size", "3000"])
+        .args(["-q", "inflate", "--in-place", "--confirm", "--size", "3000"])
         .arg(&input)
         .assert()
         .success();
