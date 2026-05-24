@@ -41,7 +41,7 @@ curl -fsSL https://raw.githubusercontent.com/walangstudio/fa10/main/install.sh |
 
 This downloads the right prebuilt binary, verifies its SHA-256, and installs it
 to `/usr/local/bin` (or `~/.local/bin` if that is not writable). Re-run it any
-time to upgrade. Options: `--version v0.1.0` for a specific release,
+time to upgrade. Options: `--version v0.2.0` for a specific release,
 `--pre-release` for the latest pre-release.
 
 ### Windows (PowerShell)
@@ -54,7 +54,7 @@ Installs to `%LOCALAPPDATA%\Programs\fa10` and adds it to your user PATH. For
 options, run the script explicitly:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/walangstudio/fa10/main/install.ps1))) -Version v0.1.0
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/walangstudio/fa10/main/install.ps1))) -Version v0.2.0
 ```
 
 ### With cargo
