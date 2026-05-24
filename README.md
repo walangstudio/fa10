@@ -29,22 +29,61 @@ extracted 42 entries from project.fa10 -> . (1.20 MiB), SHA-256 verified
 
 ## Install
 
-From source:
+### Linux / macOS
 
 ```sh
-cargo install --path .
+curl -fsSL https://raw.githubusercontent.com/walangstudio/fa10/main/install.sh | sh
 ```
 
-Once it is on crates.io:
+This downloads the right prebuilt binary, verifies its SHA-256, and installs it
+to `/usr/local/bin` (or `~/.local/bin` if that is not writable). Re-run it any
+time to upgrade. Options: `--version v0.1.0` for a specific release,
+`--pre-release` for the latest pre-release.
+
+### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/walangstudio/fa10/main/install.ps1 | iex
+```
+
+Installs to `%LOCALAPPDATA%\Programs\fa10` and adds it to your user PATH. For
+options, run the script explicitly:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/walangstudio/fa10/main/install.ps1))) -Version v0.1.0
+```
+
+### With cargo
 
 ```sh
-cargo install fa10
+cargo install fa10                     # from crates.io, once published
+cargo install --git https://github.com/walangstudio/fa10   # from source
 ```
+
+`cargo binstall fa10` also works if you have [cargo-binstall](https://github.com/cargo-bins/cargo-binstall) (it pulls the prebuilt binary).
+
+### Manual
 
 Prebuilt binaries are attached to each
 [release](https://github.com/walangstudio/fa10/releases): Linux and macOS on
-x86_64 and arm64, Windows on x86_64. They ship unpacked as `.tar.gz` (Unix) or
-`.zip` (Windows), with a `SHA256SUMS` file to verify against.
+x86_64 and arm64, Windows on x86_64, shipped as `.tar.gz` (Unix) / `.zip`
+(Windows) with a `SHA256SUMS` file. Download, verify, extract the single `fa10`
+binary, and put it anywhere on your `PATH`.
+
+## Uninstall
+
+```sh
+# Linux / macOS
+curl -fsSL https://raw.githubusercontent.com/walangstudio/fa10/main/install.sh | sh -s -- --uninstall
+```
+
+```powershell
+# Windows
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/walangstudio/fa10/main/install.ps1))) -Uninstall
+```
+
+Or just delete the `fa10` binary from wherever it was installed. fa10 keeps no
+config, cache, or registry state, so removing the binary removes everything.
 
 ## Usage
 

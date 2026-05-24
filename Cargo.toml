@@ -12,6 +12,16 @@ keywords = ["cli", "testing", "filesystem", "benchmark", "padding"]
 categories = ["command-line-utilities", "filesystem"]
 exclude = ["/.github", "/target"]
 
+# Lets `cargo binstall fa10` pull the prebuilt release binary (asset names match
+# the release workflow: fa10-v<version>-<target>.tar.gz, .zip on Windows).
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/fa10-v{ version }-{ target }{ archive-suffix }"
+bin-dir = "{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
+
 [[bin]]
 name = "fa10"
 path = "src/main.rs"
