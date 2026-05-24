@@ -1,0 +1,2 @@
+# Shell installers must stay LF or `curl | sh` breaks on CR characters.
+*.sh text eol=lf
