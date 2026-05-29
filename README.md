@@ -1,6 +1,7 @@
 # fa10
 
 [![CI](https://github.com/walangstudio/fa10/actions/workflows/ci.yml/badge.svg)](https://github.com/walangstudio/fa10/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/walangstudio/fa10?sort=semver)](https://github.com/walangstudio/fa10/releases/latest)
 [![Crates.io](https://img.shields.io/crates/v/fa10.svg)](https://crates.io/crates/fa10)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust 1.74+](https://img.shields.io/badge/rust-1.74%2B-orange.svg)](https://www.rust-lang.org)
@@ -41,7 +42,7 @@ curl -fsSL https://raw.githubusercontent.com/walangstudio/fa10/main/install.sh |
 
 This downloads the right prebuilt binary, verifies its SHA-256, and installs it
 to `/usr/local/bin` (or `~/.local/bin` if that is not writable). Re-run it any
-time to upgrade. Options: `--version v0.2.0` for a specific release,
+time to upgrade. Options: `--version v0.3.0` for a specific release,
 `--pre-release` for the latest pre-release.
 
 ### Windows (PowerShell)
@@ -54,7 +55,7 @@ Installs to `%LOCALAPPDATA%\Programs\fa10` and adds it to your user PATH. For
 options, run the script explicitly:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/walangstudio/fa10/main/install.ps1))) -Version v0.2.0
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/walangstudio/fa10/main/install.ps1))) -Version v0.3.0
 ```
 
 ### With cargo
@@ -97,16 +98,21 @@ config, cache, or registry state, so removing the binary removes everything.
 fa10 <path>...                      pack by 2x total size (the default)
 fa10 --multiplier 5 <path>...       pack to 5x the total input size
 fa10 --size 100MB <path>...         pack to a fixed size
+fa10 report.csv                     -> report.fa10 (extension dropped, like zip)
 fa10 mydir/                         pack a directory tree -> mydir.fa10
 fa10 a.txt b.txt -o out.fa10        pack several files into one archive
 fa10 restore <archive>...           extract the tree (into the current dir)
 fa10 info <archive>                 list entries and metadata, change nothing
 ```
 
-Output naming: one file `foo` becomes `foo.fa10`; one directory `bar` becomes
-`bar.fa10`; two or more loose files default to `archive.fa10` (or pass
-`--output`). Extraction recreates the stored tree under the current directory,
-or under `--output <dir>`, like `unzip`.
+Output naming: a file drops its extension, like zip, so `report.csv` becomes
+`report.fa10` (the original name is kept in the manifest and `restore` puts the
+extension back). A directory `bar` has no extension to drop, so it becomes
+`bar.fa10`; two or more loose files default to `archive.fa10`. Pass `--output`
+to name it yourself. Note two inputs that differ only by extension
+(`a.csv`, `a.xml`) resolve to the same default name; fa10 refuses to overwrite
+rather than clobber the first. Extraction recreates the stored tree under the
+current directory, or under `--output <dir>`, like `unzip`.
 
 `fa10 inflate <path>` is the explicit form if you prefer to spell it out
 (`grow` works too, as a hidden alias). The implicit `inflate` only kicks in when
@@ -129,7 +135,7 @@ fa10 slim   <archive>     same as restore
 |------|---------|--------------|
 | `-m`, `--multiplier <N>` | inflate | Output size as a multiple of the total input size. Default is 2. |
 | `-s`, `--size <SIZE>` | inflate | Fixed target size, for example `100MB` or `2GiB`. Cannot be combined with `--multiplier`. |
-| `-o`, `--output <PATH>` | inflate | Archive path. Defaults to `<input>.fa10`, or `archive.fa10` for 2+ inputs. |
+| `-o`, `--output <PATH>` | inflate | Archive path. Defaults to the input name with its extension replaced by `.fa10` (a directory keeps its name + `.fa10`), or `archive.fa10` for 2+ inputs. |
 | `-o`, `--output <DIR>` | restore | Directory to extract into. Defaults to the current directory. |
 | `--pattern <STR>` | inflate | Padding text to repeat. Default is `FA10-PADDING-BLOCK-`. |
 | `--in-place` | inflate | Replace a single input file with its archive. Requires `--confirm`. |
@@ -220,8 +226,8 @@ The toolchain is pinned in `rust-toolchain.toml`; CI uses the same version.
 Releases are built by `.github/workflows/release.yml`. Either push a tag:
 
 ```sh
-git tag -a v0.2.0 -m "Release v0.2.0"
-git push origin v0.2.0
+git tag -a v0.3.0 -m "Release v0.3.0"
+git push origin v0.3.0
 ```
 
 or run the `Release` workflow manually (Actions tab) with a tag input. The

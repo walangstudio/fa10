@@ -4,7 +4,7 @@ set -e
 # fa10 installer for Linux and macOS. Downloads the prebuilt binary from GitHub
 # Releases, verifies its SHA-256, and installs it. Re-running upgrades in place.
 #   curl -fsSL https://raw.githubusercontent.com/walangstudio/fa10/main/install.sh | sh
-#   ... | sh -s -- --version v0.1.0      install a specific version
+#   ... | sh -s -- --version v0.3.0      install a specific version
 #   ... | sh -s -- --pre-release         install the latest pre-release
 #   ... | sh -s -- --uninstall           remove fa10
 # On Windows use install.ps1 instead.
@@ -143,7 +143,7 @@ main() {
       *) fatal "Unknown option: $arg" ;;
     esac
   done
-  [ "$need_version" = "1" ] && fatal "--version requires a value (e.g. --version v0.1.0)"
+  [ "$need_version" = "1" ] && fatal "--version requires a value (e.g. --version v0.3.0)"
   [ "$USE_PRERELEASE" = "1" ] && [ -n "$REQUESTED_VERSION" ] && fatal "--pre-release and --version cannot be combined"
 
   TARGET="$(detect_target)"
