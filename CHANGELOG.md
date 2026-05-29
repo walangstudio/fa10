@@ -4,6 +4,24 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-05-29
+
+### Changed
+- Default archive name now drops the file's original extension, like zip:
+  `report.csv` -> `report.fa10` (was `report.csv.fa10`). The full name is stored
+  in the manifest, so `restore` rebuilds `report.csv` exactly. Directories have
+  no extension to drop, so `.fa10` is appended (`photos` -> `photos.fa10`).
+  Use `--output` to set any name explicitly. Two inputs that differ only by
+  extension (`a.csv`, `a.xml`) now map to the same default name; the second
+  refuses with an "output exists" error rather than overwriting.
+- Removed the three-line startup banner; `inflate`/`restore`/`info` now go
+  straight to work. The progress bar and result summary are unchanged.
+- `--quiet` help text reworded (it suppresses progress and result output; there
+  is no longer a banner to suppress).
+
+### Fixed
+- Install-script `--version`/`-Version` examples now reference a current tag.
+
 ## [0.2.0] - 2026-05-24
 
 First release. fa10 is the opposite of zip: it packs files and directories into
@@ -39,4 +57,5 @@ byte-for-byte. The `fa10` binary reports this version (`fa10 --version`).
 - Prebuilt binaries (Linux/macOS x86_64 + arm64, Windows x86_64) with
   `SHA256SUMS`, built and published by the release workflow on each `v*` tag.
 
+[0.3.0]: https://github.com/walangstudio/fa10/releases/tag/v0.3.0
 [0.2.0]: https://github.com/walangstudio/fa10/releases/tag/v0.2.0

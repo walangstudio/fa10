@@ -3,7 +3,7 @@
 # Releases, verifies its SHA-256, installs it, and adds it to your user PATH.
 # Re-running upgrades in place.
 #   irm https://raw.githubusercontent.com/walangstudio/fa10/main/install.ps1 | iex
-#   & ([scriptblock]::Create((irm .../install.ps1))) -Version v0.1.0
+#   & ([scriptblock]::Create((irm .../install.ps1))) -Version v0.3.0
 #   & ([scriptblock]::Create((irm .../install.ps1))) -Uninstall
 [CmdletBinding()]
 param(

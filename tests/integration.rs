@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use fa10::format::{Entry, EntryKind, Manifest, END_MAGIC, HEADER_MAGIC};
 use fa10::grow::{GrowOptions, Target};
@@ -53,7 +53,7 @@ fn single_file_roundtrips_exactly() {
     let opts = GrowOptions::new(vec![original.clone()], Target::Multiplier(3.0));
     let outcome = grow::grow(&opts, &NoProgress).unwrap();
 
-    assert_eq!(outcome.output_path, dir.path().join("payload.bin.fa10"));
+    assert_eq!(outcome.output_path, dir.path().join("payload.fa10"));
     assert_eq!(outcome.entry_count, 1);
     assert_eq!(outcome.payload_size, data.len() as u64);
     assert_eq!(outcome.output_size, data.len() as u64 * 3);
@@ -102,6 +102,46 @@ fn directory_tree_roundtrips() {
 
     assert_eq!(read_tree(&root), read_tree(&out.path().join("data")));
     assert!(out.path().join("data/emptydir").is_dir());
+}
+
+#[test]
+fn directory_with_trailing_separator_writes_sibling_archive() {
+    let src = tempfile::tempdir().unwrap();
+    let root = src.path().join("proj");
+    fs::create_dir(&root).unwrap();
+    fs::write(root.join("a.txt"), b"alpha").unwrap();
+
+    // A path with a trailing separator (e.g. from shell completion) must not put
+    // the archive *inside* the directory as `proj/.fa10`.
+    let with_sep = PathBuf::from(format!("{}{}", root.display(), std::path::MAIN_SEPARATOR));
+    let opts = GrowOptions::new(vec![with_sep], Target::Multiplier(2.0));
+    let outcome = grow::grow(&opts, &NoProgress).unwrap();
+
+    assert_eq!(outcome.output_path, src.path().join("proj.fa10"));
+    assert!(!root.join(".fa10").exists());
+}
+
+#[test]
+fn reinflating_an_fa10_file_appends_rather_than_collides() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("note.txt");
+    fs::write(&input, b"note").unwrap();
+
+    let first = grow::grow(
+        &GrowOptions::new(vec![input], Target::Multiplier(2.0)),
+        &NoProgress,
+    )
+    .unwrap();
+    assert_eq!(first.output_path, dir.path().join("note.fa10"));
+
+    // Inflating the archive again must produce a distinct sibling, not error on
+    // a self-collision.
+    let second = grow::grow(
+        &GrowOptions::new(vec![first.output_path], Target::Multiplier(2.0)),
+        &NoProgress,
+    )
+    .unwrap();
+    assert_eq!(second.output_path, dir.path().join("note.fa10.fa10"));
 }
 
 #[test]

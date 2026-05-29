@@ -28,7 +28,7 @@ fn pack_and_extract_single_file() {
         .assert()
         .success();
 
-    let grown = dir.path().join("hello.txt.fa10");
+    let grown = dir.path().join("hello.fa10");
     assert_eq!(fs::metadata(&grown).unwrap().len(), 2000);
 
     let out = tempfile::tempdir().unwrap();
@@ -45,17 +45,17 @@ fn pack_and_extract_single_file() {
 }
 
 #[test]
-fn quiet_suppresses_the_banner() {
+fn no_banner_on_normal_run() {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("q.txt");
-    fs::write(&input, b"quiet please").unwrap();
+    fs::write(&input, b"no banner please").unwrap();
 
     fa10()
-        .args(["--quiet", "inflate", "--size", "2000"])
+        .args(["inflate", "--size", "2000"])
         .arg(&input)
         .assert()
         .success()
-        .stderr(predicate::str::contains("fa10 v").not());
+        .stderr(predicate::str::contains("fully-reversible").not());
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn cake_alias_grows_to_double() {
 
     fa10().arg("-q").arg("cake").arg(&input).assert().success();
 
-    let grown = dir.path().join("c.bin.fa10");
+    let grown = dir.path().join("c.fa10");
     assert_eq!(fs::metadata(&grown).unwrap().len(), 1000);
 }
 
@@ -78,10 +78,7 @@ fn bare_file_defaults_to_grow() {
 
     fa10().arg("-q").arg(&input).assert().success();
 
-    assert_eq!(
-        fs::metadata(dir.path().join("d.bin.fa10")).unwrap().len(),
-        800
-    );
+    assert_eq!(fs::metadata(dir.path().join("d.fa10")).unwrap().len(), 800);
 }
 
 #[test]
@@ -96,10 +93,7 @@ fn top_level_multiplier_implies_grow() {
         .assert()
         .success();
 
-    assert_eq!(
-        fs::metadata(dir.path().join("e.bin.fa10")).unwrap().len(),
-        1200
-    );
+    assert_eq!(fs::metadata(dir.path().join("e.fa10")).unwrap().len(), 1200);
 }
 
 #[test]
@@ -118,7 +112,7 @@ fn slim_and_diet_aliases_extract() {
         fa10()
             .args(["-q", alias, "--output"])
             .arg(out.path())
-            .arg(dir.path().join("f.txt.fa10"))
+            .arg(dir.path().join("f.fa10"))
             .assert()
             .success();
         assert_eq!(
@@ -138,7 +132,7 @@ fn feast_and_buffet_aliases_scale() {
         fa10().arg("-q").arg(alias).arg(&input).assert().success();
 
         assert_eq!(
-            fs::metadata(dir.path().join("b.bin.fa10")).unwrap().len(),
+            fs::metadata(dir.path().join("b.fa10")).unwrap().len(),
             1000 * factor,
             "alias {alias}"
         );
@@ -212,7 +206,7 @@ fn implicit_grow_custom_pattern_round_trips() {
         .arg(&input)
         .assert()
         .success();
-    let grown = dir.path().join("p.txt.fa10");
+    let grown = dir.path().join("p.fa10");
     assert_eq!(fs::metadata(&grown).unwrap().len(), 4000);
 
     let out = tempfile::tempdir().unwrap();
@@ -257,10 +251,7 @@ fn grow_is_a_working_alias_of_inflate() {
         .arg(&input)
         .assert()
         .success();
-    assert_eq!(
-        fs::metadata(dir.path().join("g.bin.fa10")).unwrap().len(),
-        2000
-    );
+    assert_eq!(fs::metadata(dir.path().join("g.fa10")).unwrap().len(), 2000);
 }
 
 #[test]
@@ -276,7 +267,7 @@ fn info_lists_entries_and_multiplier() {
 
     fa10()
         .args(["-q", "info"])
-        .arg(dir.path().join("h.bin.fa10"))
+        .arg(dir.path().join("h.fa10"))
         .assert()
         .success()
         .stdout(predicate::str::contains("entries:      1"))
@@ -310,13 +301,13 @@ fn failed_grow_leaves_no_partial_output() {
     fs::write(&input, vec![6u8; 500]).unwrap();
 
     // Pre-create the output so grow refuses (OutputExists) before writing.
-    let grown = dir.path().join("x.bin.fa10");
+    let grown = dir.path().join("x.fa10");
     fs::write(&grown, b"preexisting").unwrap();
 
     fa10().arg("-q").arg(&input).assert().failure();
 
     assert_eq!(fs::read(&grown).unwrap(), b"preexisting");
-    assert!(!dir.path().join("x.bin.fa10.fa10.tmp").exists());
+    assert!(!dir.path().join("x.fa10.fa10.tmp").exists());
 }
 
 #[test]

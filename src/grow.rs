@@ -65,11 +65,28 @@ pub struct GrowOutcome {
     pub clamped: bool,
 }
 
-/// Default sibling output path: `<input>.fa10`.
+/// Default sibling output path. For a file the original extension is replaced,
+/// like zip: `report.csv` -> `report.fa10`. The real name (with extension) is
+/// kept in the manifest, so `restore` puts it back exactly. A directory has no
+/// extension to drop, so `.fa10` is appended (`photos` -> `photos.fa10`), and a
+/// file already named `*.fa10` is appended to rather than replaced so
+/// re-inflating round-trips (`note.fa10` -> `note.fa10.fa10`) instead of
+/// colliding with itself.
 fn default_output(input: &Path) -> PathBuf {
-    let mut name = input.as_os_str().to_owned();
-    name.push(".fa10");
-    PathBuf::from(name)
+    let already_fa10 = input
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("fa10"));
+    if input.is_dir() || already_fa10 {
+        // Append, deriving the name from the final component so a trailing
+        // separator (`proj/`, common from shell completion) yields the sibling
+        // `proj.fa10` rather than `proj/.fa10` written inside the directory.
+        let stem = input.file_name().unwrap_or(input.as_os_str());
+        let mut name = stem.to_owned();
+        name.push(".fa10");
+        input.with_file_name(name)
+    } else {
+        input.with_extension("fa10")
+    }
 }
 
 fn resolve_output(opts: &GrowOptions) -> PathBuf {

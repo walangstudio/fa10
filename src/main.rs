@@ -11,14 +11,6 @@ use fa10::{grow, info, restore, to_hex};
 mod cli;
 use cli::{Cli, Commands, GrowArgs, InfoArgs, RestoreArgs, ThemedArgs};
 
-const BANNER: &str = concat!(
-    "fa10 v",
-    env!("CARGO_PKG_VERSION"),
-    " - inflate files and directories into one larger, fully-reversible archive.\n",
-    "Recognizable padding instead of compression; `fa10 restore` rebuilds the tree.\n",
-    "Local filesystem only: no network, no persistence, no self-modification.\n",
-);
-
 /// An `indicatif`-backed progress sink (only when the `progress` feature is on).
 #[cfg(feature = "progress")]
 struct BarProgress {
@@ -96,9 +88,6 @@ fn inject_default_subcommand(mut args: Vec<std::ffi::OsString>) -> Vec<std::ffi:
 }
 
 fn run(cli: &Cli) -> Result<()> {
-    if !cli.quiet {
-        eprint!("{BANNER}");
-    }
     match &cli.command {
         Commands::Inflate(args) => run_grow(args, cli),
         Commands::Cake(args) => run_themed(args, 2.0, cli),

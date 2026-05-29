@@ -13,7 +13,7 @@ use clap::{Args, Parser, Subcommand};
     arg_required_else_help = true,
 )]
 pub struct Cli {
-    /// Suppress the banner and progress output.
+    /// Suppress progress and result output.
     #[arg(short, long, global = true)]
     pub quiet: bool,
 
