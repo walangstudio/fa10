@@ -136,3 +136,34 @@ jobs:
           generate_release_notes: true
           files: dist/*
           fail_on_unmatched_files: true
+
+  publish-crate:
+    # Publish the crate to crates.io after every platform build succeeds.
+    # No-ops gracefully when CARGO_REGISTRY_TOKEN is not configured.
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+
+      - uses: dtolnay/rust-toolchain@1.95.0
+
+      - name: Set crate version from tag
+        shell: bash
+        run: |
+          ver="${{ needs.prepare.outputs.version }}"
+          perl -0pi -e "s/^version = \".*\"/version = \"${ver}\"/m" Cargo.toml
+          head -n 4 Cargo.toml
+
+      - name: Publish to crates.io
+        shell: bash
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
+            echo "CARGO_REGISTRY_TOKEN not set — skipping crates.io publish."
+            exit 0
+          fi
+          cargo publish
